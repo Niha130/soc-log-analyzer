@@ -25,7 +25,7 @@ export const useLiveLogs = () => {
 
   const fetchLogs = useCallback(async () => {
     try {
-      const res = await fetch('http://localhost:8000/api/logs');
+      const res = await fetch('https://soc-log-analyzer-api.onrender.com/api/logs');
       const data = await res.json();
       const newLogs: LogEntry[] = data.logs || [];
 
