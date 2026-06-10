@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Shield, Activity, AlertTriangle, Database, Globe, Terminal } from 'lucide-react';
 import { useLiveLogs } from './hooks/useLiveLogs';
 import Dashboard from './components/Dashboard';
@@ -9,21 +9,34 @@ import DataSources from './components/DataSources';
 
 type Tab = 'dashboard' | 'logs' | 'alerts' | 'intel' | 'sources';
 
-const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
-  { id: 'dashboard', label: 'Dashboard', icon: <Activity size={15} /> },
-  { id: 'logs', label: 'Log Analyzer', icon: <Terminal size={15} /> },
-  { id: 'alerts', label: 'Alerts', icon: <AlertTriangle size={15} /> },
-  { id: 'intel', label: 'Threat Intel', icon: <Globe size={15} /> },
-  { id: 'sources', label: 'Data Sources', icon: <Database size={15} /> },
-];
+function LiveClock() {
+  const [time, setTime] = useState(new Date());
+  useEffect(() => {
+    const t = setInterval(() => setTime(new Date()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  return (
+    <span className="font-mono text-xs text-[#4a5a7a]">
+      {time.toUTCString().slice(17, 25)}{' '}
+      <span className="text-[#1a2744]">UTC</span>
+    </span>
+  );
+}
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
   const { logs, alerts, isLive, toggleLive, newLogCount, timeSeries, stats, updateAlertStatus } = useLiveLogs();
 
+  const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
+    { id: 'dashboard', label: 'Dashboard', icon: <Activity size={15} /> },
+    { id: 'logs', label: 'Log Analyzer', icon: <Terminal size={15} /> },
+    { id: 'alerts', label: 'Alerts', icon: <AlertTriangle size={15} /> },
+    { id: 'intel', label: 'Threat Intel', icon: <Globe size={15} /> },
+    { id: 'sources', label: 'Data Sources', icon: <Database size={15} /> },
+  ];
+
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-[#0a0e17]">
-      {/* Top Header */}
       <header className="flex items-center justify-between px-5 py-3 border-b border-[#1a2744] bg-[#0f1624] shrink-0">
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
@@ -35,9 +48,7 @@ export default function App() {
           <div className="h-4 w-px bg-[#1a2744]" />
           <span className="font-mono text-xs text-[#4a5a7a]">niha130</span>
         </div>
-
         <div className="flex items-center gap-4">
-          {/* Live indicator */}
           <button
             onClick={toggleLive}
             className={`flex items-center gap-2 px-3 py-1.5 rounded border font-mono text-xs transition-all ${
@@ -54,8 +65,6 @@ export default function App() {
               </span>
             )}
           </button>
-
-          {/* Open alerts badge */}
           <div className="flex items-center gap-2 font-mono text-xs">
             <span className="text-[#4a5a7a]">OPEN ALERTS</span>
             <span className={`px-2 py-0.5 rounded border font-semibold ${
@@ -66,13 +75,10 @@ export default function App() {
               {stats.openAlerts}
             </span>
           </div>
-
-          {/* Clock */}
           <LiveClock />
         </div>
       </header>
 
-      {/* Tab Bar */}
       <nav className="flex items-center gap-1 px-4 py-2 border-b border-[#1a2744] bg-[#0a0e17] shrink-0">
         {tabs.map(tab => (
           <button
@@ -95,7 +101,6 @@ export default function App() {
         ))}
       </nav>
 
-      {/* Main content */}
       <main className="flex-1 overflow-auto">
         {activeTab === 'dashboard' && <Dashboard logs={logs} alerts={alerts} stats={stats} timeSeries={timeSeries} />}
         {activeTab === 'logs' && <LogAnalyzer logs={logs} isLive={isLive} />}
@@ -104,20 +109,5 @@ export default function App() {
         {activeTab === 'sources' && <DataSources />}
       </main>
     </div>
-  );
-}
-
-function LiveClock() {
-  const [time, setTime] = useState(new Date());
-  useState(() => {
-    const t = setInterval(() => setTime(new Date()), 1000);
-    return () => clearInterval(t);
-  });
-
-  return (
-    <span className="font-mono text-xs text-[#4a5a7a]">
-      {time.toUTCString().slice(17, 25)}{' '}
-      <span className="text-[#1a2744]">UTC</span>
-    </span>
   );
 }
