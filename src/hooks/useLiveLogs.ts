@@ -1,6 +1,4 @@
 // src/hooks/useLiveLogs.ts
-// Fetches live logs + alerts from backend, triggers sound on new threats
-
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useSoundAlerts } from './useSoundAlerts'
 
@@ -24,6 +22,7 @@ export interface LogEntry {
   country:   string
   isThreat:  boolean
   mitre:     string
+  anomaly?:  boolean
   ml?: {
     isAnomaly:    boolean
     anomalyScore: number
@@ -33,12 +32,22 @@ export interface LogEntry {
 
 export interface AlertEntry extends LogEntry {}
 
+export interface TimePoint {
+  time:    string
+  logs:    number
+  threats: number
+}
+
 export interface Metrics {
-  totalLogs:     number
-  totalAlerts:   number
-  criticalCount: number
-  highCount:     number
-  mlActive:      boolean
+  totalLogs:         number
+  totalAlerts:       number
+  criticalCount:     number
+  highCount:         number
+  mediumCount:       number
+  lowCount:          number
+  mlActive:          boolean
+  resolvedIncidents: number
+  timeSeriesData:    TimePoint[]
 }
 
 export function useLiveLogs(soundEnabled: boolean = true) {
@@ -48,7 +57,8 @@ export function useLiveLogs(soundEnabled: boolean = true) {
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState<string | null>(null)
 
-  const prevAlertIds = useRef<Set<string>>(new Set())
+  const prevAlertIds  = useRef<Set<string>>(new Set())
+  const timeSeriesRef = useRef<TimePoint[]>([])
   const { playSound } = useSoundAlerts()
 
   const fetchAll = useCallback(async () => {
@@ -63,10 +73,10 @@ export function useLiveLogs(soundEnabled: boolean = true) {
       const logsJson   = await logsRes.json()
       const alertsJson = await alertsRes.json()
 
-      const newLogs   = logsJson.logs   || []
-      const newAlerts = alertsJson.alerts || []
+      const newLogs:   LogEntry[]   = logsJson.logs    || []
+      const newAlerts: AlertEntry[] = alertsJson.alerts || []
 
-      // ── Sound notification for NEW alerts ─────────────────────────────────
+      // Sound alerts for NEW threats
       if (soundEnabled && prevAlertIds.current.size > 0) {
         for (const alert of newAlerts) {
           if (!prevAlertIds.current.has(alert.id)) {
@@ -77,14 +87,35 @@ export function useLiveLogs(soundEnabled: boolean = true) {
       }
       prevAlertIds.current = new Set(newAlerts.map((a: AlertEntry) => a.id))
 
+      // Build time series — keeps last 20 points
+      const timeLabel = new Date().toLocaleTimeString([], {
+        hour: '2-digit', minute: '2-digit', second: '2-digit'
+      })
+      const newPoint: TimePoint = {
+        time:    timeLabel,
+        logs:    newLogs.length,
+        threats: newAlerts.length,
+      }
+      const updated = [...timeSeriesRef.current, newPoint].slice(-20)
+      timeSeriesRef.current = updated
+
+      const criticalCount = newAlerts.filter(a => a.severity === 'CRITICAL').length
+      const highCount     = newAlerts.filter(a => a.severity === 'HIGH').length
+      const mediumCount   = newAlerts.filter(a => a.severity === 'MEDIUM').length
+      const lowCount      = newAlerts.filter(a => a.severity === 'LOW').length
+
       setLogs(newLogs)
       setAlerts(newAlerts)
       setMetrics({
-        totalLogs:     newLogs.length,
-        totalAlerts:   newAlerts.length,
-        criticalCount: newAlerts.filter((a: AlertEntry) => a.severity === 'CRITICAL').length,
-        highCount:     newAlerts.filter((a: AlertEntry) => a.severity === 'HIGH').length,
-        mlActive:      newLogs.some((l: LogEntry) => l.ml?.mlStatus === 'active'),
+        totalLogs:         newLogs.length,
+        totalAlerts:       newAlerts.length,
+        criticalCount,
+        highCount,
+        mediumCount,
+        lowCount,
+        mlActive:          newLogs.some(l => l.ml?.mlStatus === 'active'),
+        resolvedIncidents: 0,
+        timeSeriesData:    [...updated],
       })
       setError(null)
     } catch {
@@ -96,7 +127,7 @@ export function useLiveLogs(soundEnabled: boolean = true) {
 
   useEffect(() => {
     fetchAll()
-    const timer = setInterval(fetchAll, 15_000)   // refresh every 15s
+    const timer = setInterval(fetchAll, 10_000)
     return () => clearInterval(timer)
   }, [fetchAll])
 
