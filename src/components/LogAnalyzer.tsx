@@ -1,180 +1,267 @@
-import { useState, useMemo } from 'react';
-import { Search, Filter, Download, ChevronDown, ChevronRight } from 'lucide-react';
-import type { LogEntry, Severity, LogCategory } from '../types';
-import { SEVERITY_BG } from '../utils/mockData';
+// src/components/LogAnalyzer.tsx
+import { useState, useMemo } from 'react'
+import { Search, Filter, Brain } from 'lucide-react'
+import type { LogEntry } from '../types'
+import ExportReports from './ExportReports'
 
-interface Props {
-  logs: LogEntry[];
-  isLive: boolean;
+// Support both old (lowercase) and new (uppercase) severity/category
+type AnyLog = LogEntry & {
+  hostname?:    string
+  sourceIp?:    string
+  category?:    string
+  isThreat?:    boolean
+  country?:     string
+  protocol?:    string
+  bytes?:       number
+  mitre?:       string
+  ml?: {
+    isAnomaly:    boolean
+    anomalyScore: number
+    mlStatus:     string
+  }
 }
 
-const CATEGORIES: LogCategory[] = ['AUTH', 'NETWORK', 'SYSTEM', 'MALWARE', 'INTRUSION', 'DATA_EXFIL', 'RECON', 'POLICY'];
-const SEVERITIES: Severity[] = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO'];
+const SEV_BADGE: Record<string, string> = {
+  CRITICAL: 'text-red-400 bg-red-900/20 border-red-800',
+  HIGH:     'text-orange-400 bg-orange-900/20 border-orange-800',
+  MEDIUM:   'text-yellow-400 bg-yellow-900/20 border-yellow-800',
+  LOW:      'text-green-400 bg-green-900/20 border-green-800',
+  INFO:     'text-blue-400 bg-blue-900/20 border-blue-800',
+  critical: 'text-red-400 bg-red-900/20 border-red-800',
+  high:     'text-orange-400 bg-orange-900/20 border-orange-800',
+  medium:   'text-yellow-400 bg-yellow-900/20 border-yellow-800',
+  low:      'text-green-400 bg-green-900/20 border-green-800',
+}
 
-export default function LogAnalyzer({ logs, isLive }: Props) {
-  const [search, setSearch] = useState('');
-  const [filterSeverity, setFilterSeverity] = useState<Severity | 'ALL'>('ALL');
-  const [filterCategory, setFilterCategory] = useState<LogCategory | 'ALL'>('ALL');
-  const [filterThreat, setFilterThreat] = useState<'ALL' | 'THREATS'>('ALL');
-  const [expandedLog, setExpandedLog] = useState<string | null>(null);
+const ALL_SEVERITIES = ['CRITICAL','HIGH','MEDIUM','LOW','INFO']
+
+export default function LogAnalyzer({ logs }: { logs: LogEntry[] }) {
+  const [search,   setSearch]   = useState('')
+  const [severity, setSeverity] = useState('all')
+  const [onlyML,   setOnlyML]   = useState(false)
+
+  const anyLogs = logs as AnyLog[]
+
+  // Collect unique categories from actual data
+  const categories = useMemo(() => {
+    const cats = new Set<string>()
+    anyLogs.forEach(l => {
+      if (l.category) cats.add(l.category)
+      if (l.type)     cats.add(l.type)
+    })
+    return Array.from(cats).sort()
+  }, [anyLogs])
+
+  const [category, setCategory] = useState('all')
 
   const filtered = useMemo(() => {
-    return logs.filter(log => {
-      if (filterSeverity !== 'ALL' && log.severity !== filterSeverity) return false;
-      if (filterCategory !== 'ALL' && log.category !== filterCategory) return false;
-      if (filterThreat === 'THREATS' && !log.isThreat) return false;
-      if (search) {
-        const q = search.toLowerCase();
-        return (
-          log.message.toLowerCase().includes(q) ||
-          log.sourceIp.includes(q) ||
-          log.hostname.toLowerCase().includes(q) ||
-          (log.user?.toLowerCase().includes(q) ?? false) ||
-          log.id.toLowerCase().includes(q)
-        );
-      }
-      return true;
-    });
-  }, [logs, search, filterSeverity, filterCategory, filterThreat]);
+    return anyLogs.filter(l => {
+      const sev = l.severity?.toUpperCase()
+      const cat = l.category ?? l.type ?? ''
 
-  const exportCsv = () => {
-    const header = 'ID,Timestamp,Severity,Category,SourceIP,Hostname,User,Message\n';
-    const rows = filtered.map(l =>
-      `"${l.id}","${l.timestamp}","${l.severity}","${l.category}","${l.sourceIp}","${l.hostname}","${l.user || ''}","${l.message.replace(/"/g, '""')}"`
-    ).join('\n');
-    const blob = new Blob([header + rows], { type: 'text/csv' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `soc-logs-${Date.now()}.csv`;
-    a.click();
-  };
+      if (severity !== 'all' && sev !== severity) return false
+      if (category !== 'all' && cat !== category && l.type !== category) return false
+      if (onlyML && !l.ml?.isAnomaly) return false
+
+      if (search) {
+        const q = search.toLowerCase()
+        const inMsg  = l.message?.toLowerCase().includes(q)
+        const inSrc  = l.source?.toLowerCase().includes(q)
+        const inIP   = (l.sourceIp ?? l.sourceIP ?? '').includes(q)
+        const inHost = (l.hostname ?? '').toLowerCase().includes(q)
+        const inUser = (l.user ?? '').toLowerCase().includes(q)
+        if (!inMsg && !inSrc && !inIP && !inHost && !inUser) return false
+      }
+      return true
+    })
+  }, [anyLogs, search, severity, category, onlyML])
+
+  const anomalyCount = anyLogs.filter(l => l.ml?.isAnomaly).length
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-2 p-3 border-b border-[#1a2744] bg-[#0f1624] shrink-0">
+    <div className="space-y-4">
+
+      {/* ── Filters bar ─────────────────────────────────────────────── */}
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex flex-wrap gap-3 items-center">
+
         {/* Search */}
-        <div className="relative flex-1 min-w-48">
-          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#4a5a7a]" />
+        <div className="flex items-center gap-2 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 flex-1 min-w-48">
+          <Search size={14} className="text-gray-500 shrink-0" />
           <input
-            type="text"
-            placeholder="Search IP, host, message, user..."
+            className="bg-transparent text-sm text-gray-200 placeholder-gray-600 outline-none w-full"
+            placeholder="Search message, IP, hostname, user…"
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="w-full bg-[#0a0e17] border border-[#1a2744] rounded px-8 py-1.5 font-mono text-xs text-[#c8d8f0] placeholder-[#4a5a7a] focus:outline-none focus:border-[#00d4ff]/50"
           />
         </div>
 
         {/* Severity filter */}
-        <div className="relative">
-          <Filter size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#4a5a7a]" />
+        <div className="flex items-center gap-2">
+          <Filter size={14} className="text-gray-500" />
           <select
-            value={filterSeverity}
-            onChange={e => setFilterSeverity(e.target.value as Severity | 'ALL')}
-            className="bg-[#0a0e17] border border-[#1a2744] rounded pl-7 pr-6 py-1.5 font-mono text-xs text-[#c8d8f0] focus:outline-none focus:border-[#00d4ff]/50 appearance-none cursor-pointer"
+            className="bg-gray-800 border border-gray-700 text-sm text-gray-300 rounded-lg px-3 py-2 outline-none"
+            value={severity}
+            onChange={e => setSeverity(e.target.value)}
           >
-            <option value="ALL">All Severities</option>
-            {SEVERITIES.map(s => <option key={s} value={s}>{s}</option>)}
+            <option value="all">All Severities</option>
+            {ALL_SEVERITIES.map(s => (
+              <option key={s} value={s}>{s}</option>
+            ))}
           </select>
         </div>
 
         {/* Category filter */}
         <select
-          value={filterCategory}
-          onChange={e => setFilterCategory(e.target.value as LogCategory | 'ALL')}
-          className="bg-[#0a0e17] border border-[#1a2744] rounded px-2 py-1.5 font-mono text-xs text-[#c8d8f0] focus:outline-none focus:border-[#00d4ff]/50 cursor-pointer"
+          className="bg-gray-800 border border-gray-700 text-sm text-gray-300 rounded-lg px-3 py-2 outline-none"
+          value={category}
+          onChange={e => setCategory(e.target.value)}
         >
-          <option value="ALL">All Categories</option>
-          {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+          <option value="all">All Categories</option>
+          {categories.map(c => (
+            <option key={c} value={c}>{c}</option>
+          ))}
         </select>
 
-        {/* Threat toggle */}
+        {/* ML Anomaly filter toggle */}
         <button
-          onClick={() => setFilterThreat(f => f === 'ALL' ? 'THREATS' : 'ALL')}
-          className={`px-3 py-1.5 rounded border font-mono text-xs transition-all ${
-            filterThreat === 'THREATS'
-              ? 'border-[#ff4466]/50 text-[#ff4466] bg-[#ff4466]/10'
-              : 'border-[#1a2744] text-[#4a5a7a] hover:border-[#ff4466]/30 hover:text-[#ff4466]'
+          onClick={() => setOnlyML(p => !p)}
+          className={`flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg border transition-colors ${
+            onlyML
+              ? 'bg-purple-900/50 border-purple-700 text-purple-300'
+              : 'bg-gray-800 border-gray-700 text-gray-400 hover:text-gray-200'
           }`}
         >
-          Threats Only
+          <Brain size={13} />
+          ML Anomalies Only
+          {anomalyCount > 0 && (
+            <span className="bg-purple-700 text-white text-xs rounded-full px-1.5 py-0.5 leading-none">
+              {anomalyCount}
+            </span>
+          )}
         </button>
 
-        <div className="flex-1" />
-
-        <span className="font-mono text-xs text-[#4a5a7a]">{filtered.length.toLocaleString()} events</span>
-
-        <button
-          onClick={exportCsv}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-[#1a2744] text-[#4a5a7a] hover:text-[#00d4ff] hover:border-[#00d4ff]/30 font-mono text-xs transition-all"
-        >
-          <Download size={12} />
-          Export
-        </button>
+        <span className="text-xs text-gray-500 ml-auto whitespace-nowrap">
+          {filtered.length} / {logs.length} entries
+        </span>
       </div>
 
-      {/* Log table header */}
-      <div className="grid grid-cols-[90px_130px_80px_90px_120px_100px_1fr] gap-2 px-3 py-2 border-b border-[#1a2744] bg-[#0a0e17] shrink-0">
-        {['ID', 'TIMESTAMP', 'SEV', 'CATEGORY', 'SOURCE IP', 'HOST', 'MESSAGE'].map(h => (
-          <span key={h} className="font-mono text-[10px] text-[#4a5a7a] uppercase tracking-wider">{h}</span>
-        ))}
+      {/* ── Export bar ──────────────────────────────────────────────── */}
+      <div className="flex justify-end">
+        <ExportReports logs={anyLogs as any} />
       </div>
 
-      {/* Log rows */}
-      <div className="flex-1 overflow-y-auto">
-        {filtered.map((log, idx) => (
-          <div key={log.id}>
-            <div
-              onClick={() => setExpandedLog(expandedLog === log.id ? null : log.id)}
-              className={`grid grid-cols-[90px_130px_80px_90px_120px_100px_1fr] gap-2 px-3 py-2 border-b border-[#1a2744]/50 cursor-pointer transition-colors hover:bg-[#0f1624] ${
-                idx < 3 && isLive ? 'log-new' : ''
-              } ${log.severity === 'CRITICAL' ? 'bg-[#ff4466]/5' : ''}`}
-            >
-              <span className="font-mono text-[11px] text-[#4a5a7a]">{log.id}</span>
-              <span className="font-mono text-[11px] text-[#4a5a7a]">{log.timestamp.slice(11, 23)}</span>
-              <span>
-                <span className={`px-1.5 py-0.5 rounded border font-mono text-[10px] ${SEVERITY_BG[log.severity]}`}>
-                  {log.severity.slice(0, 4)}
-                </span>
-              </span>
-              <span className="font-mono text-[11px] text-[#00d4ff]">{log.category}</span>
-              <span className={`font-mono text-[11px] ${log.isThreat ? 'text-[#ff4466]' : 'text-[#c8d8f0]'}`}>{log.sourceIp}</span>
-              <span className="font-mono text-[11px] text-[#a855f7]">{log.hostname}</span>
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="font-mono text-[11px] text-[#c8d8f0] truncate">{log.message}</span>
-                {expandedLog === log.id ? <ChevronDown size={11} className="text-[#4a5a7a] shrink-0" /> : <ChevronRight size={11} className="text-[#4a5a7a] shrink-0" />}
-              </div>
-            </div>
+      {/* ── Log table ───────────────────────────────────────────────── */}
+      <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-gray-800 text-gray-500 bg-gray-800/50">
+                <th className="text-left px-4 py-3 font-medium w-36">Time</th>
+                <th className="text-left px-4 py-3 font-medium w-24">Severity</th>
+                <th className="text-left px-4 py-3 font-medium w-28">Category</th>
+                <th className="text-left px-4 py-3 font-medium w-32">Source IP</th>
+                <th className="text-left px-4 py-3 font-medium w-28">Hostname</th>
+                <th className="text-left px-4 py-3 font-medium w-20">User</th>
+                <th className="text-left px-4 py-3 font-medium">Message</th>
+                <th className="text-left px-4 py-3 font-medium w-20">MITRE</th>
+                <th className="text-left px-4 py-3 font-medium w-20">ML Score</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.length === 0 ? (
+                <tr>
+                  <td colSpan={9} className="px-4 py-10 text-center text-gray-600">
+                    {logs.length === 0
+                      ? 'Waiting for live logs from the backend…'
+                      : 'No logs match your current filters.'}
+                  </td>
+                </tr>
+              ) : (
+                filtered.map(log => {
+                  const sev = log.severity?.toUpperCase() ?? log.severity
+                  const isAnomaly = log.ml?.isAnomaly ?? false
+                  return (
+                    <tr
+                      key={log.id}
+                      className={`border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors ${
+                        isAnomaly ? 'bg-purple-900/10' : ''
+                      }`}
+                    >
+                      {/* Time */}
+                      <td className="px-4 py-2.5 text-gray-500 font-mono">
+                        {log.timestamp
+                          ? (typeof log.timestamp === 'string' && log.timestamp.includes('T')
+                              ? new Date(log.timestamp).toLocaleTimeString()
+                              : String(log.timestamp).split(' ').slice(3, 4).join('') || log.timestamp)
+                          : '—'}
+                      </td>
 
-            {/* Expanded raw log */}
-            {expandedLog === log.id && (
-              <div className="px-4 py-3 bg-[#0a0e17] border-b border-[#1a2744] space-y-2">
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 font-mono text-[11px]">
-                  {[
-                    ['User', log.user || '—'],
-                    ['Protocol', log.protocol || '—'],
-                    ['Port', String(log.port || '—')],
-                    ['Bytes', log.bytes ? log.bytes.toLocaleString() : '—'],
-                    ['Dest IP', log.destIp || '—'],
-                    ['Country', log.country || '—'],
-                    ['Threat', log.isThreat ? 'YES' : 'NO'],
-                    ['Tags', log.tags.join(', ')],
-                  ].map(([k, v]) => (
-                    <div key={k}>
-                      <span className="text-[#4a5a7a]">{k}: </span>
-                      <span className={k === 'Threat' && v === 'YES' ? 'text-[#ff4466]' : 'text-[#c8d8f0]'}>{v}</span>
-                    </div>
-                  ))}
-                </div>
-                <div className="bg-[#0f1624] rounded border border-[#1a2744] p-2">
-                  <p className="font-mono text-[10px] text-[#4a5a7a] mb-1">RAW LOG</p>
-                  <p className="font-mono text-[11px] text-[#00ff88] break-all">{log.rawLog}</p>
-                </div>
-              </div>
-            )}
-          </div>
-        ))}
+                      {/* Severity badge */}
+                      <td className="px-4 py-2.5">
+                        <span className={`px-2 py-0.5 rounded border text-xs font-bold uppercase ${SEV_BADGE[sev] ?? SEV_BADGE[log.severity] ?? 'text-gray-400 border-gray-700'}`}>
+                          {sev || log.severity}
+                        </span>
+                      </td>
+
+                      {/* Category */}
+                      <td className="px-4 py-2.5 text-gray-400 capitalize">
+                        {log.category ?? log.type ?? '—'}
+                      </td>
+
+                      {/* Source IP */}
+                      <td className="px-4 py-2.5 text-blue-400 font-mono">
+                        {log.sourceIp ?? log.sourceIP ?? '—'}
+                      </td>
+
+                      {/* Hostname */}
+                      <td className="px-4 py-2.5 text-gray-400 font-mono">
+                        {log.hostname ?? log.source ?? '—'}
+                      </td>
+
+                      {/* User */}
+                      <td className="px-4 py-2.5 text-gray-400">
+                        {log.user ?? '—'}
+                      </td>
+
+                      {/* Message */}
+                      <td className="px-4 py-2.5 text-gray-300 max-w-xs truncate">
+                        {log.message}
+                      </td>
+
+                      {/* MITRE */}
+                      <td className="px-4 py-2.5">
+                        {log.mitre ? (
+                          <span className="text-purple-400 font-mono">{log.mitre}</span>
+                        ) : log.threat?.mitreId ? (
+                          <span className="text-purple-400 font-mono">{log.threat.mitreId}</span>
+                        ) : '—'}
+                      </td>
+
+                      {/* ML Score */}
+                      <td className="px-4 py-2.5">
+                        {log.ml ? (
+                          <div className="flex items-center gap-1.5">
+                            {isAnomaly && <Brain size={11} className="text-purple-400 shrink-0" />}
+                            <div className="w-12 bg-gray-700 rounded-full h-1.5">
+                              <div
+                                className={`h-1.5 rounded-full ${isAnomaly ? 'bg-purple-500' : 'bg-gray-500'}`}
+                                style={{ width: `${log.ml.anomalyScore}%` }}
+                              />
+                            </div>
+                            <span className={`text-xs ${isAnomaly ? 'text-purple-400' : 'text-gray-600'}`}>
+                              {log.ml.anomalyScore}
+                            </span>
+                          </div>
+                        ) : '—'}
+                      </td>
+                    </tr>
+                  )
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
-  );
+  )
 }

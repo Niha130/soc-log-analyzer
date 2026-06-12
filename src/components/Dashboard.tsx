@@ -1,185 +1,297 @@
-import AttackHeatmap    from './AttackHeatmap'
+// src/components/Dashboard.tsx
+import { AlertTriangle, Database, Shield, Clock, Brain, TrendingUp } from 'lucide-react'
+import {
+  AreaChart, Area, XAxis, YAxis, Tooltip,
+  ResponsiveContainer, BarChart, Bar, Cell, PieChart, Pie, Legend
+} from 'recharts'
+import type { LogEntry, Alert, SecurityMetrics } from '../types'
+import AttackHeatmap  from './AttackHeatmap'
 import AnomalyDetection from './AnomalyDetection'
-import ExportReports    from '../components/ExportReports'
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { AlertTriangle, Shield, Activity, TrendingUp, Eye, Zap } from 'lucide-react';
-import type { LogEntry, Alert, ThreatStats, TimeSeriesPoint } from '../types';
-import { SEVERITY_BG } from '../utils/mockData';
+import ExportReports  from './ExportReports'
 
 interface Props {
-  logs: LogEntry[];
-  alerts: Alert[];
-  stats: ThreatStats;
-  timeSeries: TimeSeriesPoint[];
+  logs:    LogEntry[]
+  alerts:  Alert[]
+  metrics: SecurityMetrics | null
 }
 
-const StatCard = ({
-  label, value, sub, color, icon
-}: { label: string; value: string | number; sub?: string; color: string; icon: React.ReactNode }) => (
-  <div className={`bg-[#0f1624] border ${color} rounded-lg p-4 relative overflow-hidden`}>
-    <div className="flex items-start justify-between">
-      <div>
-        <p className="font-mono text-xs text-[#4a5a7a] uppercase tracking-wider mb-1">{label}</p>
-        <p className="font-mono text-3xl font-semibold text-[#c8d8f0]">{value}</p>
-        {sub && <p className="font-mono text-xs text-[#4a5a7a] mt-1">{sub}</p>}
+// ── Helpers ───────────────────────────────────────────────────────────────────
+const SEV_COLOR: Record<string, string> = {
+  CRITICAL: 'text-red-400',   critical: 'text-red-400',
+  HIGH:     'text-orange-400', high:    'text-orange-400',
+  MEDIUM:   'text-yellow-400', medium:  'text-yellow-400',
+  LOW:      'text-green-400',  low:     'text-green-400',
+  INFO:     'text-blue-400',
+}
+
+const SEV_BG: Record<string, string> = {
+  CRITICAL: 'bg-red-900/30 border-red-800',   critical: 'bg-red-900/30 border-red-800',
+  HIGH:     'bg-orange-900/30 border-orange-800', high: 'bg-orange-900/30 border-orange-800',
+  MEDIUM:   'bg-yellow-900/30 border-yellow-800', medium: 'bg-yellow-900/30 border-yellow-800',
+  LOW:      'bg-green-900/30 border-green-800',   low:  'bg-green-900/30 border-green-800',
+  INFO:     'bg-blue-900/30 border-blue-800',
+}
+
+const PIE_COLORS = ['#dc2626','#ea580c','#ca8a04','#16a34a','#2563eb']
+
+function StatCard({
+  label, value, sub, icon, color
+}: {
+  label: string; value: number | string; sub?: string
+  icon: React.ReactNode; color: string
+}) {
+  return (
+    <div className={`rounded-xl border p-4 flex items-center gap-4 ${color}`}>
+      <div className="opacity-80 shrink-0">{icon}</div>
+      <div className="min-w-0">
+        <p className="text-2xl font-bold">{value}</p>
+        <p className="text-xs opacity-70 mt-0.5 leading-tight">{label}</p>
+        {sub && <p className="text-xs opacity-50 mt-0.5">{sub}</p>}
       </div>
-      <div className="opacity-20 scale-150">{icon}</div>
     </div>
-  </div>
-);
+  )
+}
 
-const PIE_COLORS = ['#ff4466', '#ffaa00', '#a855f7', '#00d4ff', '#4a5a7a'];
+// ── Component ─────────────────────────────────────────────────────────────────
+export default function Dashboard({ logs, alerts, metrics }: Props) {
+  // Support both old (lowercase) and new (uppercase) severity formats
+  const criticalAlerts = alerts.filter(
+    a => a.severity === 'critical' || a.severity === 'CRITICAL'
+  ).length
+  const highAlerts = alerts.filter(
+    a => a.severity === 'high' || a.severity === 'HIGH'
+  ).length
+  const openAlerts = alerts.filter(
+    a => (a as any).isThreat || a.status === 'open'
+  ).length
 
-export default function Dashboard({ logs, alerts, stats, timeSeries }: Props) {
-  // Category breakdown
-  const categoryCount: Record<string, number> = {};
+  const recentLogs = logs.slice(0, 8)
+
+  // Build pie data from alerts by severity
+  const sevCounts = ['CRITICAL','HIGH','MEDIUM','LOW','INFO'].map((s, i) => ({
+    name:  s,
+    value: alerts.filter(a =>
+      a.severity?.toUpperCase() === s || a.severity === s.toLowerCase()
+    ).length,
+    color: PIE_COLORS[i],
+  })).filter(d => d.value > 0)
+
+  // Build category bar data from logs
+  const catCounts: Record<string, number> = {}
   logs.forEach(l => {
-    categoryCount[l.category] = (categoryCount[l.category] || 0) + 1;
-  });
-  const categoryData = Object.entries(categoryCount)
+    const cat = (l as any).category ?? l.type ?? 'unknown'
+    catCounts[cat] = (catCounts[cat] ?? 0) + 1
+  })
+  const catData = Object.entries(catCounts)
     .sort((a, b) => b[1] - a[1])
-    .slice(0, 5)
-    .map(([name, value]) => ({ name, value }));
-
-  // Severity pie
-  const pieData = [
-    { name: 'Critical', value: stats.critical },
-    { name: 'High', value: stats.high },
-    { name: 'Medium', value: stats.medium },
-    { name: 'Low', value: stats.low },
-  ];
-
-  const recentAlerts = alerts.filter(a => a.status === 'OPEN' || a.status === 'INVESTIGATING').slice(0, 5);
-  const recentLogs = logs.slice(0, 8);
+    .slice(0, 6)
+    .map(([name, count]) => ({ name, count }))
 
   return (
-    <div className="p-4 space-y-4">
-      {/* Stat row */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-        <StatCard label="Total Events" value={stats.total} sub="last 500 logs" color="border-[#1a2744]" icon={<Activity size={32} className="text-[#00d4ff]" />} />
-        <StatCard label="Critical" value={stats.critical} color="border-[#ff4466]/30 glow-red" icon={<Zap size={32} className="text-[#ff4466]" />} />
-        <StatCard label="High" value={stats.high} color="border-[#ffaa00]/30" icon={<AlertTriangle size={32} className="text-[#ffaa00]" />} />
-        <StatCard label="Medium" value={stats.medium} color="border-[#a855f7]/30" icon={<Eye size={32} className="text-[#a855f7]" />} />
-        <StatCard label="Open Alerts" value={stats.openAlerts} color="border-[#ff4466]/30" icon={<Shield size={32} className="text-[#ff4466]" />} />
-        <StatCard label="Resolved" value={stats.resolvedToday} sub="today" color="border-[#00ff88]/30" icon={<TrendingUp size={32} className="text-[#00ff88]" />} />
+    <div className="space-y-5">
+
+      {/* ── Stat cards ────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard
+          label="Total Logs"
+          value={metrics?.totalLogs ?? logs.length}
+          icon={<Database size={26} />}
+          color="bg-blue-900/30 border-blue-800 text-blue-300"
+        />
+        <StatCard
+          label="Active Alerts"
+          value={openAlerts}
+          sub={`${criticalAlerts} critical`}
+          icon={<AlertTriangle size={26} />}
+          color="bg-orange-900/30 border-orange-800 text-orange-300"
+        />
+        <StatCard
+          label="Critical Threats"
+          value={criticalAlerts}
+          sub={`${highAlerts} high severity`}
+          icon={<Shield size={26} />}
+          color="bg-red-900/30 border-red-800 text-red-300"
+        />
+        <StatCard
+          label="Resolved"
+          value={metrics?.resolvedIncidents ?? 0}
+          icon={<Clock size={26} />}
+          color="bg-green-900/30 border-green-800 text-green-300"
+        />
       </div>
 
-      {/* Charts row */}
+      {/* ── Export bar ────────────────────────────────────────────────── */}
+      <div className="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3 flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-center gap-2 text-sm text-gray-400">
+          <TrendingUp size={15} className="text-blue-400" />
+          <span>Export your log data for reporting</span>
+        </div>
+        <ExportReports logs={logs as any} />
+      </div>
+
+      {/* ── Charts row ────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Time series */}
-        <div className="lg:col-span-2 bg-[#0f1624] border border-[#1a2744] rounded-lg p-4">
-          <p className="font-mono text-xs text-[#4a5a7a] uppercase tracking-wider mb-4">Event Volume — Last 20 min</p>
-          <ResponsiveContainer width="100%" height={180}>
-            <AreaChart data={timeSeries} margin={{ top: 0, right: 0, bottom: 0, left: -30 }}>
-              <defs>
-                {[['critical', '#ff4466'], ['high', '#ffaa00'], ['medium', '#a855f7'], ['low', '#00d4ff']].map(([k, c]) => (
-                  <linearGradient key={k} id={`grad-${k}`} x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor={c} stopOpacity={0.3} />
-                    <stop offset="95%" stopColor={c} stopOpacity={0} />
+
+        {/* Log activity over time */}
+        <div className="lg:col-span-2 bg-gray-900 border border-gray-800 rounded-xl p-4">
+          <h2 className="text-sm font-semibold text-gray-300 mb-3">Log Activity Over Time</h2>
+          {metrics?.timeSeriesData && metrics.timeSeriesData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={180}>
+              <AreaChart data={metrics.timeSeriesData}>
+                <defs>
+                  <linearGradient id="logGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%"  stopColor="#3b82f6" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
                   </linearGradient>
-                ))}
-              </defs>
-              <XAxis dataKey="time" tick={{ fill: '#4a5a7a', fontSize: 10, fontFamily: 'JetBrains Mono' }} tickLine={false} axisLine={false} />
-              <YAxis tick={{ fill: '#4a5a7a', fontSize: 10, fontFamily: 'JetBrains Mono' }} tickLine={false} axisLine={false} />
-              <Tooltip
-                contentStyle={{ background: '#0f1624', border: '1px solid #1a2744', borderRadius: 6, fontFamily: 'JetBrains Mono', fontSize: 11 }}
-                labelStyle={{ color: '#c8d8f0' }}
-                itemStyle={{ color: '#4a5a7a' }}
-              />
-              <Area type="monotone" dataKey="critical" stroke="#ff4466" fill="url(#grad-critical)" strokeWidth={1.5} dot={false} />
-              <Area type="monotone" dataKey="high" stroke="#ffaa00" fill="url(#grad-high)" strokeWidth={1.5} dot={false} />
-              <Area type="monotone" dataKey="medium" stroke="#a855f7" fill="url(#grad-medium)" strokeWidth={1.5} dot={false} />
-              <Area type="monotone" dataKey="low" stroke="#00d4ff" fill="url(#grad-low)" strokeWidth={1.5} dot={false} />
-            </AreaChart>
-          </ResponsiveContainer>
-          {/* Legend */}
-          <div className="flex gap-4 mt-2">
-            {[['Critical', '#ff4466'], ['High', '#ffaa00'], ['Medium', '#a855f7'], ['Low', '#00d4ff']].map(([l, c]) => (
-              <div key={l} className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full" style={{ background: c }} />
-                <span className="font-mono text-[10px] text-[#4a5a7a]">{l}</span>
-              </div>
-            ))}
-          </div>
+                </defs>
+                <XAxis dataKey="time" tick={{ fill: '#6b7280', fontSize: 11 }} />
+                <YAxis tick={{ fill: '#6b7280', fontSize: 11 }} />
+                <Tooltip contentStyle={{ background: '#111827', border: '1px solid #374151', borderRadius: 8, fontSize: 12 }} />
+                <Area type="monotone" dataKey="logs" stroke="#3b82f6" fill="url(#logGrad)" strokeWidth={2} />
+              </AreaChart>
+            </ResponsiveContainer>
+          ) : catData.length > 0 ? (
+            // Fallback: show category distribution if no time series
+            <ResponsiveContainer width="100%" height={180}>
+              <BarChart data={catData}>
+                <XAxis dataKey="name" tick={{ fill: '#6b7280', fontSize: 11 }} />
+                <YAxis tick={{ fill: '#6b7280', fontSize: 11 }} />
+                <Tooltip contentStyle={{ background: '#111827', border: '1px solid #374151', borderRadius: 8, fontSize: 12 }} />
+                <Bar dataKey="count" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-44 flex items-center justify-center text-gray-600 text-sm">Waiting for data…</div>
+          )}
         </div>
 
-        {/* Pie */}
-        <div className="bg-[#0f1624] border border-[#1a2744] rounded-lg p-4">
-          <p className="font-mono text-xs text-[#4a5a7a] uppercase tracking-wider mb-2">Severity Distribution</p>
-          <ResponsiveContainer width="100%" height={160}>
-            <PieChart>
-              <Pie data={pieData} cx="50%" cy="50%" innerRadius={45} outerRadius={70} paddingAngle={2} dataKey="value" stroke="none">
-                {pieData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i]} />)}
-              </Pie>
-              <Tooltip
-                contentStyle={{ background: '#0f1624', border: '1px solid #1a2744', borderRadius: 6, fontFamily: 'JetBrains Mono', fontSize: 11 }}
-                labelStyle={{ color: '#c8d8f0' }}
-              />
-            </PieChart>
-          </ResponsiveContainer>
-          <div className="space-y-1 mt-1">
-            {pieData.map((d, i) => (
-              <div key={d.name} className="flex items-center justify-between font-mono text-[11px]">
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-sm" style={{ background: PIE_COLORS[i] }} />
-                  <span className="text-[#4a5a7a]">{d.name}</span>
-                </div>
-                <span className="text-[#c8d8f0]">{d.value}</span>
-              </div>
-            ))}
-          </div>
+        {/* Severity pie chart */}
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+          <h2 className="text-sm font-semibold text-gray-300 mb-3">Alert Severity Breakdown</h2>
+          {sevCounts.length > 0 ? (
+            <ResponsiveContainer width="100%" height={180}>
+              <PieChart>
+                <Pie
+                  data={sevCounts} dataKey="value" nameKey="name"
+                  cx="50%" cy="50%" outerRadius={65} innerRadius={35}
+                >
+                  {sevCounts.map((entry, i) => (
+                    <Cell key={i} fill={entry.color} />
+                  ))}
+                </Pie>
+                <Tooltip contentStyle={{ background: '#111827', border: '1px solid #374151', borderRadius: 8, fontSize: 12 }} />
+                <Legend
+                  iconType="circle" iconSize={8}
+                  wrapperStyle={{ fontSize: 11, color: '#9ca3af' }}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-44 flex items-center justify-center text-gray-600 text-sm">
+              No alert data yet
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Bottom panels */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Active Alerts */}
-        <div className="bg-[#0f1624] border border-[#1a2744] rounded-lg p-4">
-          <p className="font-mono text-xs text-[#4a5a7a] uppercase tracking-wider mb-3">Active Threats</p>
-          <div className="space-y-2">
-            {recentAlerts.map(alert => (
-              <div
-                key={alert.id}
-                className={`flex items-start gap-3 p-2.5 rounded border ${
-                  alert.severity === 'CRITICAL' ? 'border-[#ff4466]/30 bg-[#ff4466]/5' : 'border-[#1a2744] bg-[#0a0e17]/50'
-                }`}
-              >
-                <span className={`mt-0.5 px-1.5 py-0.5 rounded border text-[10px] font-mono font-semibold ${SEVERITY_BG[alert.severity]}`}>
-                  {alert.severity.slice(0, 4)}
-                </span>
-                <div className="flex-1 min-w-0">
-                  <p className="font-mono text-xs text-[#c8d8f0] truncate">{alert.title}</p>
-                  <p className="font-mono text-[10px] text-[#4a5a7a] mt-0.5">{alert.affectedHost} · {alert.mitreId || alert.category}</p>
-                </div>
-                <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${
-                  alert.status === 'INVESTIGATING' ? 'border-[#ffaa00]/40 text-[#ffaa00] bg-[#ffaa00]/10' : 'border-[#ff4466]/40 text-[#ff4466] bg-[#ff4466]/10'
-                }`}>
-                  {alert.status}
-                </span>
-              </div>
-            ))}
-          </div>
+      {/* ── Top threat categories bar ──────────────────────────────────── */}
+      {catData.length > 0 && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+          <h2 className="text-sm font-semibold text-gray-300 mb-3">Top Event Categories</h2>
+          <ResponsiveContainer width="100%" height={140}>
+            <BarChart data={catData} layout="vertical">
+              <XAxis type="number" tick={{ fill: '#6b7280', fontSize: 11 }} />
+              <YAxis dataKey="name" type="category" width={100} tick={{ fill: '#9ca3af', fontSize: 11 }} />
+              <Tooltip contentStyle={{ background: '#111827', border: '1px solid #374151', borderRadius: 8, fontSize: 12 }} />
+              <Bar dataKey="count" fill="#f97316" radius={[0, 4, 4, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
         </div>
+      )}
 
-        {/* Recent logs */}
-        <div className="bg-[#0f1624] border border-[#1a2744] rounded-lg p-4">
-          <p className="font-mono text-xs text-[#4a5a7a] uppercase tracking-wider mb-3">Recent Events</p>
+      {/* ── Attack Heatmap ────────────────────────────────────────────── */}
+      <AttackHeatmap />
+
+      {/* ── ML Anomaly Detection ──────────────────────────────────────── */}
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <Brain size={16} className="text-purple-400" />
+          <h2 className="text-sm font-semibold text-gray-300">ML Anomaly Detection Preview</h2>
+          <span className="text-xs text-gray-500">(Full view in ML Anomalies tab)</span>
+        </div>
+        <AnomalyDetection compact />
+      </div>
+
+      {/* ── Recent logs ───────────────────────────────────────────────── */}
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+        <h2 className="text-sm font-semibold text-gray-300 mb-3">Recent Log Entries</h2>
+        {recentLogs.length === 0 ? (
+          <p className="text-gray-600 text-sm">Waiting for live logs…</p>
+        ) : (
           <div className="space-y-1.5">
-            {recentLogs.map(log => (
-              <div key={log.id} className="flex items-center gap-2 font-mono text-[11px]">
-                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                  log.severity === 'CRITICAL' ? 'bg-[#ff4466]' :
-                  log.severity === 'HIGH' ? 'bg-[#ffaa00]' :
-                  log.severity === 'MEDIUM' ? 'bg-[#a855f7]' : 'bg-[#4a5a7a]'
-                }`} />
-                <span className="text-[#4a5a7a] shrink-0">{log.timestamp.slice(11, 19)}</span>
-                <span className="text-[#00d4ff] shrink-0">{log.hostname}</span>
-                <span className="text-[#c8d8f0] truncate">{log.message}</span>
-              </div>
-            ))}
+            {recentLogs.map(log => {
+              const sev = (log.severity ?? '').toUpperCase()
+              return (
+                <div
+                  key={log.id}
+                  className={`flex items-start gap-3 rounded-lg border px-3 py-2 text-xs ${SEV_BG[sev] ?? SEV_BG[log.severity] ?? 'bg-gray-800 border-gray-700'}`}
+                >
+                  <span className={`font-bold uppercase w-16 shrink-0 mt-0.5 ${SEV_COLOR[sev] ?? SEV_COLOR[log.severity]}`}>
+                    {sev || log.severity}
+                  </span>
+                  <span className="text-gray-500 shrink-0">
+                    {(log as any).hostname ?? (log as any).source ?? '—'}
+                  </span>
+                  <span className="text-gray-300 truncate flex-1">{log.message}</span>
+                  <span className="text-gray-600 shrink-0 ml-auto">
+                    {(log as any).timestamp ?? (log.timestamp ? new Date(log.timestamp).toLocaleTimeString() : '—')}
+                  </span>
+                </div>
+              )
+            })}
           </div>
-        </div>
+        )}
       </div>
+
+      {/* ── Recent alerts ─────────────────────────────────────────────── */}
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+        <h2 className="text-sm font-semibold text-gray-300 mb-3">Recent Alerts</h2>
+        {alerts.length === 0 ? (
+          <p className="text-gray-600 text-sm">No alerts yet — system is monitoring…</p>
+        ) : (
+          <div className="space-y-2">
+            {alerts.slice(0, 5).map(alert => {
+              const sev = (alert.severity ?? '').toUpperCase()
+              return (
+                <div key={alert.id} className={`rounded-lg border px-4 py-3 ${SEV_BG[sev] ?? SEV_BG[alert.severity] ?? 'bg-gray-800 border-gray-700'}`}>
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <span className={`text-sm font-semibold ${SEV_COLOR[sev] ?? SEV_COLOR[alert.severity]}`}>
+                      {(alert as any).title ?? alert.message}
+                    </span>
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                      sev === 'CRITICAL' ? 'bg-red-900 text-red-300' :
+                      sev === 'HIGH'     ? 'bg-orange-900 text-orange-300' :
+                      sev === 'MEDIUM'   ? 'bg-yellow-900 text-yellow-300' :
+                                           'bg-green-900 text-green-300'
+                    }`}>
+                      {sev || alert.severity}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-1 truncate">
+                    {(alert as any).description ?? alert.message}
+                  </p>
+                  {(alert as any).sourceIp && (
+                    <p className="text-xs text-gray-600 mt-0.5">
+                      Source IP: <span className="text-blue-400 font-mono">{(alert as any).sourceIp}</span>
+                    </p>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
     </div>
-  );
+  )
 }

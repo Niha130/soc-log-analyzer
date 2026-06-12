@@ -1,113 +1,178 @@
-import React, { useState, useEffect } from 'react';
-import { Shield, Activity, AlertTriangle, Database, Globe, Terminal } from 'lucide-react';
-import { useLiveLogs } from './hooks/useLiveLogs';
-import Dashboard from './components/Dashboard';
-import LogAnalyzer from './components/LogAnalyzer';
-import AlertSystem from './components/AlertSystem';
-import ThreatIntelligence from './components/ThreatIntelligence';
-import DataSources from './components/DataSources';
+// src/App.tsx
+import { useState } from 'react'
+import {
+  Shield, Activity, AlertTriangle, Database,
+  Cpu, Wifi, WifiOff, Volume2, VolumeX, Brain, Clock
+} from 'lucide-react'
+import { useLiveLogs }      from './hooks/useLiveLogs'
+import Dashboard            from './components/Dashboard'
+import LogAnalyzer          from './components/LogAnalyzer'
+import AlertSystem          from './components/AlertSystem'
+import ThreatIntelligence   from './components/ThreatIntelligence'
+import DataSources          from './components/DataSources'
+import AttackHeatmap        from './components/AttackHeatmap'
+import AnomalyDetection     from './components/AnomalyDetection'
 
-type Tab = 'dashboard' | 'logs' | 'alerts' | 'intel' | 'sources';
-
-function LiveClock() {
-  const [time, setTime] = useState(new Date());
-  useEffect(() => {
-    const t = setInterval(() => setTime(new Date()), 1000);
-    return () => clearInterval(t);
-  }, []);
-  return (
-    <span className="font-mono text-xs text-[#4a5a7a]">
-      {time.toUTCString().slice(17, 25)}{' '}
-      <span className="text-[#1a2744]">UTC</span>
-    </span>
-  );
-}
+type Tab = 'dashboard' | 'logs' | 'alerts' | 'threats' | 'sources' | 'heatmap' | 'anomalies'
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<Tab>('dashboard');
-  const { logs, alerts, isLive, toggleLive, newLogCount, timeSeries, stats, updateAlertStatus } = useLiveLogs();
+  const [activeTab,    setActiveTab]    = useState<Tab>('dashboard')
+  const [soundEnabled, setSoundEnabled] = useState(true)
 
-  const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
-    { id: 'dashboard', label: 'Dashboard', icon: <Activity size={15} /> },
-    { id: 'logs', label: 'Log Analyzer', icon: <Terminal size={15} /> },
-    { id: 'alerts', label: 'Alerts', icon: <AlertTriangle size={15} /> },
-    { id: 'intel', label: 'Threat Intel', icon: <Globe size={15} /> },
-    { id: 'sources', label: 'Data Sources', icon: <Database size={15} /> },
-  ];
+  const { logs, alerts, metrics, loading, error, refetch } = useLiveLogs(soundEnabled)
+
+  const openAlerts    = alerts.filter(a => a.severity === 'CRITICAL' || a.severity === 'HIGH').length
+  const criticalCount = alerts.filter(a => a.severity === 'CRITICAL').length
+  const mlActive      = metrics?.mlActive ?? false
+
+  const tabs: {
+    id: Tab; label: string; icon: React.ReactNode
+    badge?: number; badgeColor?: string
+  }[] = [
+    { id: 'dashboard', label: 'Dashboard',    icon: <Activity size={15} /> },
+    { id: 'logs',      label: 'Log Analyzer', icon: <Database size={15} />, badge: logs.length },
+    {
+      id: 'alerts', label: 'Alerts', icon: <AlertTriangle size={15} />,
+      badge: openAlerts,
+      badgeColor: criticalCount > 0 ? 'bg-red-600' : 'bg-orange-500',
+    },
+    { id: 'threats',   label: 'Threat Intel',  icon: <Cpu size={15} /> },
+    { id: 'heatmap',   label: 'Attack Heatmap',icon: <Clock size={15} /> },
+    {
+      id: 'anomalies', label: 'ML Anomalies', icon: <Brain size={15} />,
+      badgeColor: mlActive ? 'bg-purple-600' : 'bg-gray-600',
+      badge: mlActive ? 1 : 0,
+    },
+    { id: 'sources',   label: 'Data Sources',  icon: <Database size={15} /> },
+  ]
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-[#0a0e17]">
-      <header className="flex items-center justify-between px-5 py-3 border-b border-[#1a2744] bg-[#0f1624] shrink-0">
+    <div className="min-h-screen bg-gray-950 text-gray-100 flex flex-col">
+
+      {/* ── Header ───────────────────────────────────────────────────── */}
+      <header className="bg-gray-900 border-b border-gray-800 px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <Shield size={20} className="text-[#00d4ff]" />
-            <span className="font-mono text-sm font-semibold text-[#c8d8f0] tracking-widest uppercase">
-              SOC<span className="text-[#00d4ff]">·</span>ANALYZER
-            </span>
+          <div className="bg-blue-600 p-1.5 rounded-lg">
+            <Shield size={20} className="text-white" />
           </div>
-          <div className="h-4 w-px bg-[#1a2744]" />
-          <span className="font-mono text-xs text-[#4a5a7a]">niha130</span>
+          <div>
+            <h1 className="text-base font-bold leading-tight">SOC Log Analyzer</h1>
+            <p className="text-xs text-gray-500 leading-tight">Threat Alert System v2.0</p>
+          </div>
         </div>
-        <div className="flex items-center gap-4">
+
+        <div className="flex items-center gap-2">
+
+          {/* ML badge */}
+          {mlActive && (
+            <div className="hidden md:flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full bg-purple-900/40 border border-purple-700 text-purple-400">
+              <Brain size={11} /> ML Active
+            </div>
+          )}
+
+          {/* Critical flash */}
+          {criticalCount > 0 && (
+            <div className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full bg-red-900/50 border border-red-700 text-red-400 live-dot">
+              <AlertTriangle size={11} />
+              {criticalCount} Critical
+            </div>
+          )}
+
+          {/* Sound toggle */}
           <button
-            onClick={toggleLive}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded border font-mono text-xs transition-all ${
-              isLive
-                ? 'border-[#00ff88]/50 text-[#00ff88] bg-[#00ff88]/10 hover:bg-[#00ff88]/20'
-                : 'border-[#4a5a7a]/50 text-[#4a5a7a] bg-[#4a5a7a]/10 hover:bg-[#4a5a7a]/20'
+            onClick={() => setSoundEnabled(p => !p)}
+            title={soundEnabled ? 'Mute alert sounds' : 'Enable alert sounds'}
+            className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border transition-colors ${
+              soundEnabled
+                ? 'border-blue-700 bg-blue-900/30 text-blue-400 hover:bg-blue-900/50'
+                : 'border-gray-700 bg-gray-800 text-gray-500 hover:text-gray-300'
             }`}
           >
-            <span className={`w-1.5 h-1.5 rounded-full ${isLive ? 'bg-[#00ff88] animate-pulse' : 'bg-[#4a5a7a]'}`} />
-            {isLive ? 'LIVE' : 'PAUSED'}
-            {isLive && newLogCount > 0 && (
-              <span className="ml-1 bg-[#00ff88]/20 text-[#00ff88] px-1 rounded text-[10px]">
-                +{newLogCount}
-              </span>
-            )}
+            {soundEnabled ? <Volume2 size={12} /> : <VolumeX size={12} />}
+            <span className="hidden md:inline">{soundEnabled ? 'Sound On' : 'Sound Off'}</span>
           </button>
-          <div className="flex items-center gap-2 font-mono text-xs">
-            <span className="text-[#4a5a7a]">OPEN ALERTS</span>
-            <span className={`px-2 py-0.5 rounded border font-semibold ${
-              stats.openAlerts > 3
-                ? 'border-[#ff4466]/50 text-[#ff4466] bg-[#ff4466]/10'
-                : 'border-[#ffaa00]/50 text-[#ffaa00] bg-[#ffaa00]/10'
-            }`}>
-              {stats.openAlerts}
-            </span>
+
+          {/* Refresh */}
+          <button
+            onClick={refetch}
+            className="text-xs px-2.5 py-1 rounded-full border border-gray-700 bg-gray-800 text-gray-400 hover:text-gray-200 transition-colors"
+          >
+            Refresh
+          </button>
+
+          {/* Live / offline badge */}
+          <div className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border ${
+            !error
+              ? 'border-green-700 bg-green-900/30 text-green-400'
+              : 'border-gray-700 bg-gray-800 text-gray-500'
+          }`}>
+            {!error
+              ? <><span className="w-1.5 h-1.5 rounded-full bg-green-400 live-dot" /><Wifi size={11} /> Live</>
+              : <><WifiOff size={11} /> Offline</>
+            }
           </div>
-          <LiveClock />
         </div>
       </header>
 
-      <nav className="flex items-center gap-1 px-4 py-2 border-b border-[#1a2744] bg-[#0a0e17] shrink-0">
-        {tabs.map(tab => (
+      {/* ── Error banner ─────────────────────────────────────────────── */}
+      {error && (
+        <div className="bg-yellow-900/40 border-b border-yellow-700 px-6 py-2 text-sm text-yellow-300 flex items-center gap-2">
+          <AlertTriangle size={14} />
+          {error} — Make sure your Render backend is running.
+        </div>
+      )}
+
+      {/* ── Loading bar ──────────────────────────────────────────────── */}
+      {loading && (
+        <div className="h-0.5 bg-gray-800">
+          <div className="h-0.5 bg-blue-500 animate-pulse w-full" />
+        </div>
+      )}
+
+      {/* ── Tab bar ──────────────────────────────────────────────────── */}
+      <nav className="bg-gray-900 border-b border-gray-800 px-4 flex gap-0 overflow-x-auto">
+        {tabs.map(t => (
           <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-medium transition-all ${
-              activeTab === tab.id
-                ? 'bg-[#00d4ff]/15 text-[#00d4ff] border border-[#00d4ff]/30'
-                : 'text-[#4a5a7a] hover:text-[#c8d8f0] hover:bg-[#1a2744]/60 border border-transparent'
+            key={t.id}
+            onClick={() => setActiveTab(t.id)}
+            className={`flex items-center gap-1.5 px-3 py-3 text-xs font-medium whitespace-nowrap border-b-2 transition-colors ${
+              activeTab === t.id
+                ? 'border-blue-500 text-blue-400'
+                : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-600'
             }`}
           >
-            {tab.icon}
-            {tab.label}
-            {tab.id === 'alerts' && stats.openAlerts > 0 && (
-              <span className="bg-[#ff4466]/20 text-[#ff4466] text-[10px] px-1 rounded-sm">
-                {stats.openAlerts}
+            {t.icon}
+            {t.label}
+            {t.badge != null && t.badge > 0 && (
+              <span className={`ml-0.5 text-white text-xs rounded-full px-1.5 py-0.5 leading-none ${t.badgeColor ?? 'bg-blue-600'}`}>
+                {t.badge > 999 ? '999+' : t.badge === 1 && t.id === 'anomalies' ? 'ON' : t.badge}
               </span>
             )}
           </button>
         ))}
       </nav>
 
-      <main className="flex-1 overflow-auto">
-        {activeTab === 'dashboard' && <Dashboard logs={logs} alerts={alerts} stats={stats} timeSeries={timeSeries} />}
-        {activeTab === 'logs' && <LogAnalyzer logs={logs} isLive={isLive} />}
-        {activeTab === 'alerts' && <AlertSystem alerts={alerts} updateAlertStatus={updateAlertStatus} />}
-        {activeTab === 'intel' && <ThreatIntelligence />}
-        {activeTab === 'sources' && <DataSources />}
+      {/* ── Page content ─────────────────────────────────────────────── */}
+      <main className="flex-1 overflow-auto p-5">
+        {activeTab === 'dashboard'  && <Dashboard logs={logs} alerts={alerts} metrics={metrics} />}
+        {activeTab === 'logs'       && <LogAnalyzer logs={logs} />}
+        {activeTab === 'alerts'     && <AlertSystem alerts={alerts} onResolve={() => {}} />}
+        {activeTab === 'threats'    && <ThreatIntelligence logs={logs} alerts={alerts} />}
+        {activeTab === 'heatmap'    && <AttackHeatmap />}
+        {activeTab === 'anomalies'  && <AnomalyDetection />}
+        {activeTab === 'sources'    && <DataSources connected={!error} metrics={null} />}
       </main>
+
+      {/* ── Footer ───────────────────────────────────────────────────── */}
+      <footer className="border-t border-gray-800 px-6 py-2 text-xs text-gray-600 flex justify-between items-center">
+        <span>SOC Log Analyzer & Threat Alert System v2.0</span>
+        <span>
+          Built by{' '}
+          <a href="https://github.com/Niha130" className="text-blue-500 hover:underline" target="_blank" rel="noreferrer">
+            Niha130
+          </a>
+        </span>
+      </footer>
     </div>
-  );
+  )
 }

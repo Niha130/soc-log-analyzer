@@ -31,7 +31,7 @@ const SEV_COLOR: Record<string, string> = {
   INFO:     'text-blue-400 bg-blue-900/30 border-blue-700',
 }
 
-export default function AnomalyDetection() {
+export default function AnomalyDetection({ compact = false }: { compact?: boolean }) {
   const [anomalies,  setAnomalies]  = useState<AnomalyLog[]>([])
   const [mlStatus,   setMlStatus]   = useState('training')
   const [trainedOn,  setTrainedOn]  = useState(0)
