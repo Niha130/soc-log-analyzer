@@ -1,3 +1,6 @@
+import AttackHeatmap    from './AttackHeatmap'
+import AnomalyDetection from './AnomalyDetection'
+import ExportReports    from '../components/ExportReports'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { AlertTriangle, Shield, Activity, TrendingUp, Eye, Zap } from 'lucide-react';
 import type { LogEntry, Alert, ThreatStats, TimeSeriesPoint } from '../types';
