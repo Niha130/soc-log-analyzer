@@ -1,79 +1,104 @@
-import { useState, useEffect, useCallback } from 'react';
-import type { LogEntry } from '../index';
+// src/hooks/useLiveLogs.ts
+// Fetches live logs + alerts from backend, triggers sound on new threats
 
-export const useLiveLogs = () => {
-  const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [alerts, setAlerts] = useState<any[]>([]);
-  const [isLive, setIsLive] = useState(true);
-  const [newLogCount, setNewLogCount] = useState(0);
-  const [timeSeries, setTimeSeries] = useState<any[]>([]);
-  const [stats, setStats] = useState({
-    total: 0,
-    critical: 0,
-    high: 0,
-    medium: 0,
-    low: 0,
-    openAlerts: 0,
-    resolved: 0,
-  });
+import { useEffect, useRef, useState, useCallback } from 'react'
+import { useSoundAlerts } from './useSoundAlerts'
 
-  const updateAlertStatus = useCallback((id: string, status: string) => {
-    setAlerts(prev => prev.map(a => a.id === id ? { ...a, status } : a));
-  }, []);
+const API = 'https://soc-log-analyzer-api.onrender.com'
 
-  const toggleLive = useCallback(() => setIsLive(prev => !prev), []);
+export interface LogEntry {
+  id:        string
+  timestamp: string
+  hour:      number
+  severity:  string
+  category:  string
+  sourceIp:  string
+  destIp:    string
+  hostname:  string
+  user:      string
+  message:   string
+  rawLog:    string
+  protocol:  string
+  port:      number
+  bytes:     number
+  country:   string
+  isThreat:  boolean
+  mitre:     string
+  ml?: {
+    isAnomaly:    boolean
+    anomalyScore: number
+    mlStatus:     string
+  }
+}
 
-  const fetchLogs = useCallback(async () => {
+export interface AlertEntry extends LogEntry {}
+
+export interface Metrics {
+  totalLogs:     number
+  totalAlerts:   number
+  criticalCount: number
+  highCount:     number
+  mlActive:      boolean
+}
+
+export function useLiveLogs(soundEnabled: boolean = true) {
+  const [logs,    setLogs]    = useState<LogEntry[]>([])
+  const [alerts,  setAlerts]  = useState<AlertEntry[]>([])
+  const [metrics, setMetrics] = useState<Metrics | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error,   setError]   = useState<string | null>(null)
+
+  const prevAlertIds = useRef<Set<string>>(new Set())
+  const { playSound } = useSoundAlerts()
+
+  const fetchAll = useCallback(async () => {
     try {
-      const res = await fetch('https://soc-log-analyzer-api.onrender.com/api/logs');
-      const data = await res.json();
-      const newLogs: LogEntry[] = data.logs || [];
+      const [logsRes, alertsRes] = await Promise.all([
+        fetch(`${API}/api/logs`),
+        fetch(`${API}/api/alerts`),
+      ])
 
-      setLogs(newLogs);
-      setNewLogCount(newLogs.length);
+      if (!logsRes.ok || !alertsRes.ok) throw new Error('API error')
 
- const critical = newLogs.filter(l => l.severity === 'CRITICAL').length;
-const high = newLogs.filter(l => l.severity === 'HIGH').length;
-const medium = newLogs.filter(l => l.severity === 'MEDIUM').length;
-const low = newLogs.filter(l => l.severity === 'LOW').length;
+      const logsJson   = await logsRes.json()
+      const alertsJson = await alertsRes.json()
 
-const newAlerts = newLogs
-  .filter(l => l.severity === 'CRITICAL' || l.severity === 'HIGH')
-        .map(l => ({ ...l, status: 'open' }));
+      const newLogs   = logsJson.logs   || []
+      const newAlerts = alertsJson.alerts || []
 
-      setAlerts(newAlerts);
-      setStats({
-        total: newLogs.length,
-        critical,
-        high,
-        medium,
-        low,
-        openAlerts: newAlerts.length,
-        resolved: 0,
-      });
+      // ── Sound notification for NEW alerts ─────────────────────────────────
+      if (soundEnabled && prevAlertIds.current.size > 0) {
+        for (const alert of newAlerts) {
+          if (!prevAlertIds.current.has(alert.id)) {
+            if (alert.severity === 'CRITICAL') playSound('critical')
+            else if (alert.severity === 'HIGH') playSound('high')
+          }
+        }
+      }
+      prevAlertIds.current = new Set(newAlerts.map((a: AlertEntry) => a.id))
 
-      setTimeSeries(prev => {
-        const point = {
-          time: new Date().toLocaleTimeString(),
-          critical,
-          high,
-          medium,
-          low,
-        };
-        const updated = [...prev, point];
-        return updated.slice(-20);
-      });
-    } catch (e) {
-      console.error('Failed to fetch logs', e);
+      setLogs(newLogs)
+      setAlerts(newAlerts)
+      setMetrics({
+        totalLogs:     newLogs.length,
+        totalAlerts:   newAlerts.length,
+        criticalCount: newAlerts.filter((a: AlertEntry) => a.severity === 'CRITICAL').length,
+        highCount:     newAlerts.filter((a: AlertEntry) => a.severity === 'HIGH').length,
+        mlActive:      newLogs.some((l: LogEntry) => l.ml?.mlStatus === 'active'),
+      })
+      setError(null)
+    } catch {
+      setError(`Cannot reach backend at ${API}`)
+    } finally {
+      setLoading(false)
     }
-  }, []);
+  }, [soundEnabled, playSound])
 
   useEffect(() => {
-    fetchLogs();
-    if (!isLive) return;
-    const interval = setInterval(fetchLogs, 5000);
-    return () => clearInterval(interval);
-  }, [fetchLogs, isLive]);
+    fetchAll()
+    const timer = setInterval(fetchAll, 15_000)   // refresh every 15s
+    return () => clearInterval(timer)
+  }, [fetchAll])
 
-  return { logs, alerts, isLive, toggleLive, newLogCount, timeSeries, stats, updateAlertStatus };
-};
+  return { logs, alerts, metrics, loading, error, refetch: fetchAll }
+}
