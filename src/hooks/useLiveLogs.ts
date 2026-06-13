@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { useSoundAlerts } from './useSoundAlerts'
 
 const API = 'http://localhost:8000'
+
 export interface LogEntry {
   id:        string
   timestamp: string
@@ -22,19 +23,17 @@ export interface LogEntry {
   isThreat:  boolean
   mitre:     string
   anomaly?:  boolean
-  ml?: {
-    isAnomaly:    boolean
-    anomalyScore: number
-    mlStatus:     string
-  }
 }
 
 export interface AlertEntry extends LogEntry {}
 
 export interface TimePoint {
-  time:    string
-  logs:    number
-  threats: number
+  time:     string
+  total:    number
+  critical: number
+  high:     number
+  medium:   number
+  low:      number
 }
 
 export interface Metrics {
@@ -50,13 +49,15 @@ export interface Metrics {
 }
 
 export function useLiveLogs(soundEnabled: boolean = true) {
-  const [logs,    setLogs]    = useState<LogEntry[]>([])
-  const [alerts,  setAlerts]  = useState<AlertEntry[]>([])
-  const [metrics, setMetrics] = useState<Metrics | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error,   setError]   = useState<string | null>(null)
+  const [logs,       setLogs]       = useState<LogEntry[]>([])
+  const [alerts,     setAlerts]     = useState<AlertEntry[]>([])
+  const [metrics,    setMetrics]    = useState<Metrics | null>(null)
+  const [loading,    setLoading]    = useState(true)
+  const [error,      setError]      = useState<string | null>(null)
 
-  const prevAlertIds  = useRef<Set<string>>(new Set())
+  const allLogsRef    = useRef<LogEntry[]>([])
+  const seenAlertIds  = useRef<Set<string>>(new Set())
+  const soundedIds    = useRef<Set<string>>(new Set())
   const timeSeriesRef = useRef<TimePoint[]>([])
   const { playSound } = useSoundAlerts()
 
@@ -66,7 +67,6 @@ export function useLiveLogs(soundEnabled: boolean = true) {
         fetch(`${API}/api/logs`),
         fetch(`${API}/api/alerts`),
       ])
-
       if (!logsRes.ok || !alertsRes.ok) throw new Error('API error')
 
       const logsJson   = await logsRes.json()
@@ -75,46 +75,63 @@ export function useLiveLogs(soundEnabled: boolean = true) {
       const newLogs:   LogEntry[]   = logsJson.logs    || []
       const newAlerts: AlertEntry[] = alertsJson.alerts || []
 
-      // Sound alerts for NEW threats
-      if (soundEnabled && prevAlertIds.current.size > 0) {
+     // ── Add only 1 new log per fetch ────────────────────────────────
+const existingIds = new Set(allLogsRef.current.map(l => l.id))
+const addedLogs   = newLogs.filter(l => !existingIds.has(l.id))
+if (addedLogs.length > 0) {
+  // Add just 1 new log per cycle
+  allLogsRef.current = [...allLogsRef.current, addedLogs[0]].slice(-500)
+}
+
+      // ── Sound: play only ONCE per alert, max 3 beeps for CRITICAL ──
+      if (soundEnabled) {
         for (const alert of newAlerts) {
-          if (!prevAlertIds.current.has(alert.id)) {
-            if (alert.severity === 'CRITICAL') playSound('critical')
-            else if (alert.severity === 'HIGH') playSound('high')
+          if (!soundedIds.current.has(alert.id)) {
+            soundedIds.current.add(alert.id)
+            if (alert.severity === 'CRITICAL') {
+              // 3 beeps for critical
+              playSound('critical')
+              setTimeout(() => playSound('critical'), 600)
+              setTimeout(() => playSound('critical'), 1200)
+            } else if (alert.severity === 'HIGH') {
+              // 1 beep for high
+              playSound('high')
+            }
           }
         }
       }
-      prevAlertIds.current = new Set(newAlerts.map((a: AlertEntry) => a.id))
 
-      // Build time series — keeps last 20 points
+      // ── Build time series ───────────────────────────────────────────
       const timeLabel = new Date().toLocaleTimeString([], {
         hour: '2-digit', minute: '2-digit', second: '2-digit'
       })
       const newPoint: TimePoint = {
-        time:    timeLabel,
-        logs:    newLogs.length,
-        threats: newAlerts.length,
+        time:     timeLabel,
+        total:    allLogsRef.current.length,
+        critical: newLogs.filter(l => l.severity === 'CRITICAL').length,
+        high:     newLogs.filter(l => l.severity === 'HIGH').length,
+        medium:   newLogs.filter(l => l.severity === 'MEDIUM').length,
+        low:      newLogs.filter(l => l.severity === 'LOW').length,
       }
-      const updated = [...timeSeriesRef.current, newPoint].slice(-20)
-      timeSeriesRef.current = updated
+      timeSeriesRef.current = [...timeSeriesRef.current, newPoint].slice(-20)
 
       const criticalCount = newAlerts.filter(a => a.severity === 'CRITICAL').length
       const highCount     = newAlerts.filter(a => a.severity === 'HIGH').length
       const mediumCount   = newAlerts.filter(a => a.severity === 'MEDIUM').length
       const lowCount      = newAlerts.filter(a => a.severity === 'LOW').length
 
-      setLogs(newLogs)
+      setLogs(allLogsRef.current)
       setAlerts(newAlerts)
       setMetrics({
-        totalLogs:         newLogs.length,
+        totalLogs:         allLogsRef.current.length,
         totalAlerts:       newAlerts.length,
         criticalCount,
         highCount,
         mediumCount,
         lowCount,
-        mlActive:          newLogs.some(l => l.ml?.mlStatus === 'active'),
+        mlActive:          false,
         resolvedIncidents: 0,
-        timeSeriesData:    [...updated],
+        timeSeriesData:    [...timeSeriesRef.current],
       })
       setError(null)
     } catch {
@@ -126,7 +143,7 @@ export function useLiveLogs(soundEnabled: boolean = true) {
 
   useEffect(() => {
     fetchAll()
-    const timer = setInterval(fetchAll, 10_000)
+    const timer = setInterval(fetchAll, 2_000)
     return () => clearInterval(timer)
   }, [fetchAll])
 
