@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react'
 import { Brain, RefreshCw, AlertTriangle } from 'lucide-react'
 
-const API = 'https://soc-log-analyzer-api.onrender.com'
+const API = 'http://localhost:8001'
 
 interface AnomalyLog {
   id:        string
