@@ -49,7 +49,12 @@ EVENTS = [
     {"severity":"INFO",    "category":"SYSTEM",    "message":"Scheduled backup completed successfully",          "mitre":""},
 ]
 
+# ── Track sent Telegram alert IDs — never send the same alert twice ──────────
 _telegram_sent_ids = set()
+
+# ── Track how many CRITICAL alerts sent — ring alarm every 15 ────────────────
+_critical_alert_count = 0
+
 
 def generate_log(index=0, hours_ago=0):
     event  = random.choice(EVENTS)
@@ -80,7 +85,9 @@ def generate_log(index=0, hours_ago=0):
         "anomaly":   False,
     }
 
+
 def send_telegram(message: str):
+    """Send a plain text message to Telegram."""
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
         return
     try:
@@ -92,23 +99,77 @@ def send_telegram(message: str):
     except Exception as e:
         print(f"[WARN] Telegram: {e}")
 
+
 def maybe_telegram(log: dict):
+    """
+    Send Telegram alert ONLY for CRITICAL severity.
+    Each unique log ID is sent exactly once — never duplicated.
+    Every 15th CRITICAL triggers an additional escalation message.
+    """
+    global _critical_alert_count
+
+    # Only CRITICAL — ignore HIGH, MEDIUM, LOW, INFO completely
+    if log["severity"] != "CRITICAL":
+        return
+
+    # Never send the same alert ID twice
     if log["id"] in _telegram_sent_ids:
         return
-    if log["severity"] not in ["CRITICAL","HIGH"]:
-        return
     _telegram_sent_ids.add(log["id"])
-    emoji = "🔴" if log["severity"] == "CRITICAL" else "🟠"
-    msg = (
-        f"{emoji} *SOC ALERT — {log['severity']}*\n"
+
+    _critical_alert_count += 1
+
+    # ── Alert 1: Standard critical alert ────────────────────────────────────
+    msg1 = (
+        f"🔴 *SOC CRITICAL ALERT*\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
         f"📋 *Event:* {log['message']}\n"
         f"🖥 *Host:* `{log['hostname']}`\n"
-        f"🌐 *IP:* `{log['sourceIp']}`\n"
+        f"🌐 *Source IP:* `{log['sourceIp']}`\n"
         f"👤 *User:* `{log['user']}`\n"
-        f"🔍 *MITRE:* `{log.get('mitre','—')}`\n"
-        f"🕐 *Time:* {log['timestamp']} UTC"
+        f"🏷 *Category:* {log['category']}\n"
+        f"🔍 *MITRE:* `{log.get('mitre', '—')}`\n"
+        f"🕐 *Time:* {log['timestamp']} UTC\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"_SOC Log Analyzer — Niha130_"
     )
-    threading.Thread(target=send_telegram, args=(msg,), daemon=True).start()
+    threading.Thread(target=send_telegram, args=(msg1,), daemon=True).start()
+
+    # ── Alert 2: Second message sent 2 seconds later ─────────────────────────
+    def send_second():
+        time.sleep(2)
+        msg2 = (
+            f"⚠️ *CRITICAL THREAT CONFIRMATION*\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"🚨 Threat `{log['id']}` requires *immediate action*\n"
+            f"📍 Asset at risk: `{log['hostname']}`\n"
+            f"🌍 Origin: `{log['country']}`\n"
+            f"🔗 Protocol: `{log['protocol']}` Port: `{log['port']}`\n"
+            f"📊 Data volume: `{log['bytes']:,}` bytes\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"*Action required — Do not ignore this alert.*\n"
+            f"_SOC Log Analyzer — Niha130_"
+        )
+        send_telegram(msg2)
+    threading.Thread(target=send_second, daemon=True).start()
+
+    # ── Every 15th CRITICAL → escalation alarm message ───────────────────────
+    if _critical_alert_count % 15 == 0:
+        def send_escalation():
+            time.sleep(4)
+            msg3 = (
+                f"🚨🚨 *ESCALATION ALARM* 🚨🚨\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"*{_critical_alert_count} CRITICAL alerts* have been triggered.\n"
+                f"Immediate SOC team response required.\n"
+                f"Latest threat: `{log['message']}`\n"
+                f"Host: `{log['hostname']}` | IP: `{log['sourceIp']}`\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"_SOC Log Analyzer — Niha130_"
+            )
+            send_telegram(msg3)
+        threading.Thread(target=send_escalation, daemon=True).start()
+
 
 def run_ml(logs: list) -> list:
     if not ML_AVAILABLE or len(logs) < 10:
@@ -127,11 +188,13 @@ def run_ml(logs: list) -> list:
         print(f"[WARN] ML: {e}")
     return logs
 
-# ── Routes ──────────────────────────────────────────────────────────────────
+
+# ── Routes ───────────────────────────────────────────────────────────────────
 
 @app.get("/")
 def root():
     return {"status": "SOC Log Analyzer API v2.0", "author": "Niha130", "ml": ML_AVAILABLE}
+
 
 @app.get("/api/logs")
 def get_logs():
@@ -142,11 +205,13 @@ def get_logs():
     logs.sort(key=lambda x: x["timestamp"], reverse=True)
     return {"logs": logs, "total": len(logs), "ml_enabled": ML_AVAILABLE}
 
+
 @app.get("/api/alerts")
 def get_alerts():
-    logs = [generate_log(i) for i in range(50)]
+    logs   = [generate_log(i) for i in range(50)]
     alerts = [l for l in logs if l["isThreat"]]
     return {"alerts": alerts[:20]}
+
 
 @app.get("/api/heatmap")
 def get_heatmap():
@@ -166,6 +231,7 @@ def get_heatmap():
             })
     return {"heatmap": result}
 
+
 @app.get("/api/anomalies")
 def get_anomalies():
     logs = [generate_log(i) for i in range(100)]
@@ -176,6 +242,7 @@ def get_anomalies():
         "total_scanned": len(logs),
         "ml_enabled":    ML_AVAILABLE
     }
+
 
 @app.get("/api/export/csv")
 def export_csv():
@@ -194,12 +261,14 @@ def export_csv():
         headers={"Content-Disposition": "attachment; filename=soc_report.csv"}
     )
 
+
 @app.post("/api/telegram/test")
 def test_telegram():
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
         return {"status": "error", "message": "Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env"}
-    send_telegram("✅ *SOC Log Analyzer* — Telegram connected!")
+    send_telegram("✅ *SOC Log Analyzer* — Telegram connected!\n_Niha130_")
     return {"status": "ok"}
+
 
 if __name__ == "__main__":
     import uvicorn
