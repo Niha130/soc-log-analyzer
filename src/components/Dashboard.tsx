@@ -130,20 +130,30 @@ export default function Dashboard({ logs, alerts, metrics, loading }: Props) {
             <ResponsiveContainer width="100%" height={180}>
               <AreaChart data={timeData}>
                 <defs>
-                  <linearGradient id="logsGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%"  stopColor="#3b82f6" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-                  </linearGradient>
-                  <linearGradient id="threatsGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%"  stopColor="#ef4444" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
+  <linearGradient id="critGrad" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="5%"  stopColor="#ef4444" stopOpacity={0.3} />
+    <stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
+  </linearGradient>
+  <linearGradient id="highGrad" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="5%"  stopColor="#f97316" stopOpacity={0.3} />
+    <stop offset="95%" stopColor="#f97316" stopOpacity={0} />
+  </linearGradient>
+  <linearGradient id="medGrad" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="5%"  stopColor="#a855f7" stopOpacity={0.3} />
+    <stop offset="95%" stopColor="#a855f7" stopOpacity={0} />
+  </linearGradient>
+  <linearGradient id="lowGrad" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="5%"  stopColor="#22d3ee" stopOpacity={0.3} />
+    <stop offset="95%" stopColor="#22d3ee" stopOpacity={0} />
+  </linearGradient>
+</defs>
                 <XAxis dataKey="time" tick={{ fill: '#6b7280', fontSize: 10 }} interval="preserveStartEnd" />
                 <YAxis tick={{ fill: '#6b7280', fontSize: 10 }} />
                 <Tooltip contentStyle={{ background: '#111827', border: '1px solid #374151', borderRadius: 8, fontSize: 12 }} />
-                <Area type="monotone" dataKey="logs"    stroke="#3b82f6" fill="url(#logsGrad)"    strokeWidth={2} name="Logs" />
-                <Area type="monotone" dataKey="threats" stroke="#ef4444" fill="url(#threatsGrad)" strokeWidth={2} name="Threats" />
+                <Area type="monotone" dataKey="critical" stroke="#ef4444" fill="url(#critGrad)"  strokeWidth={2} name="Critical" />
+<Area type="monotone" dataKey="high"     stroke="#f97316" fill="url(#highGrad)"  strokeWidth={2} name="High" />
+<Area type="monotone" dataKey="medium"   stroke="#a855f7" fill="url(#medGrad)"   strokeWidth={2} name="Medium" />
+<Area type="monotone" dataKey="low"      stroke="#22d3ee" fill="url(#lowGrad)"   strokeWidth={2} name="Low" />
               </AreaChart>
             </ResponsiveContainer>
           ) : catData.length > 0 ? (
