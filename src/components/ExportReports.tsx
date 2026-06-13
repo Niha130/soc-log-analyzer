@@ -1,171 +1,153 @@
+// src/components/ExportReports.tsx
 import { useState } from 'react'
 import { Download, FileText } from 'lucide-react'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 
-const API = 'https://soc-log-analyzer-api.onrender.com'
-
-interface Log {
-  id: string
+interface LogEntry {
+  id:        string
   timestamp: string
-  severity: string
-  category: string
-  sourceIp: string
-  hostname: string
-  user: string
-  message: string
-  mitre?: string
+  severity:  string
+  category:  string
+  sourceIp:  string
+  hostname:  string
+  user:      string
+  message:   string
+  protocol?: string
+  port?:     number
+  bytes?:    number
+  country?:  string
+  mitre?:    string
 }
 
 interface Props {
-  logs: Log[]
+  logs: LogEntry[]
 }
 
 export default function ExportReports({ logs }: Props) {
-  const [pdfLoading, setPdfLoading] = useState(false)
-  const [csvLoading, setCsvLoading] = useState(false)
+  const [exporting, setExporting] = useState(false)
 
-  const downloadCSV = async () => {
-    try {
-      setCsvLoading(true)
+  // ── Export CSV ──────────────────────────────────────────────────────────
+  const exportCSV = () => {
+    if (logs.length === 0) return
+    setExporting(true)
 
-      const res = await fetch(`${API}/api/export/csv`)
-      const blob = await res.blob()
+    const headers = [
+      'ID','Timestamp','Severity','Category','Source IP',
+      'Hostname','User','Message','Protocol','Port','Bytes','Country','MITRE'
+    ]
+    const rows = logs.map(l => [
+      l.id, l.timestamp, l.severity, l.category, l.sourceIp,
+      l.hostname, l.user, `"${l.message.replace(/"/g,'""')}"`,
+      l.protocol ?? '', l.port ?? '', l.bytes ?? '',
+      l.country ?? '', l.mitre ?? ''
+    ])
 
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-
-      a.href = url
-      a.download = `soc_logs_${new Date().toISOString().slice(0, 10)}.csv`
-
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-
-      URL.revokeObjectURL(url)
-    } catch (error) {
-      console.error(error)
-      alert('CSV download failed.')
-    } finally {
-      setCsvLoading(false)
-    }
+    const csv = [headers, ...rows].map(r => r.join(',')).join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url  = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href     = url
+    link.download = `soc_report_${new Date().toISOString().slice(0,10)}.csv`
+    link.click()
+    URL.revokeObjectURL(url)
+    setExporting(false)
   }
 
-  const downloadPDF = () => {
-    try {
-      setPdfLoading(true)
+  // ── Export PDF ──────────────────────────────────────────────────────────
+  const exportPDF = () => {
+    if (logs.length === 0) return
+    setExporting(true)
 
-      const doc = new jsPDF({
-        orientation: 'landscape',
-        unit: 'mm',
-        format: 'a4',
-      })
+    const doc = new jsPDF({ orientation: 'landscape' })
 
-      doc.setFontSize(18)
-      doc.text('SOC Log Analyzer Threat Report', 14, 18)
+    // Title
+    doc.setFontSize(16)
+    doc.setTextColor(40, 40, 40)
+    doc.text('SOC Log Analyzer — Security Report', 14, 16)
 
-      doc.setFontSize(10)
-      doc.text(
-        `Generated: ${new Date().toLocaleString()}`,
-        14,
-        26
-      )
+    // Subtitle
+    doc.setFontSize(10)
+    doc.setTextColor(100, 100, 100)
+    doc.text(`Generated: ${new Date().toLocaleString()}  |  Total logs: ${logs.length}  |  Author: Niha130`, 14, 23)
 
-      autoTable(doc, {
-        startY: 35,
-        head: [
-          [
-            'Time',
-            'Severity',
-            'Category',
-            'Source IP',
-            'Hostname',
-            'User',
-            'Message',
-            'MITRE',
-          ],
-        ],
-        body: logs.map((log) => [
-          log.timestamp,
-          log.severity,
-          log.category,
-          log.sourceIp,
-          log.hostname,
-          log.user,
-          log.message,
-          log.mitre || '-',
-        ]),
-        styles: {
-          fontSize: 8,
-        },
-      })
+    // Summary stats
+    const critical = logs.filter(l => l.severity === 'CRITICAL').length
+    const high     = logs.filter(l => l.severity === 'HIGH').length
+    const medium   = logs.filter(l => l.severity === 'MEDIUM').length
+    const low      = logs.filter(l => l.severity === 'LOW').length
+    const threats  = logs.filter(l => ['CRITICAL','HIGH'].includes(l.severity)).length
 
-      doc.save(
-        `soc_threat_report_${new Date()
-          .toISOString()
-          .slice(0, 10)}.pdf`
-      )
-    } catch (error) {
-      console.error(error)
-      alert('PDF generation failed.')
-    } finally {
-      setPdfLoading(false)
-    }
+    doc.setFontSize(9)
+    doc.setTextColor(60, 60, 60)
+    doc.text(
+      `Summary — Critical: ${critical}  High: ${high}  Medium: ${medium}  Low: ${low}  Threats: ${threats}`,
+      14, 30
+    )
+
+    // Table
+    autoTable(doc, {
+      startY: 35,
+      head: [['Time', 'Severity', 'Category', 'Source IP', 'Hostname', 'User', 'Message', 'MITRE']],
+      body: logs.slice(0, 100).map(l => [
+        l.timestamp?.slice(0,19) ?? '',
+        l.severity,
+        l.category,
+        l.sourceIp,
+        l.hostname,
+        l.user,
+        l.message.length > 60 ? l.message.slice(0, 57) + '...' : l.message,
+        l.mitre ?? ''
+      ]),
+      styles: {
+        fontSize: 7,
+        cellPadding: 2,
+      },
+      headStyles: {
+        fillColor: [17, 24, 39],
+        textColor: [156, 163, 175],
+        fontStyle: 'bold',
+      },
+      bodyStyles: {
+        textColor: [30, 30, 30],
+      },
+      alternateRowStyles: {
+        fillColor: [248, 250, 252],
+      },
+      didParseCell: (data) => {
+        if (data.section === 'body' && data.column.index === 1) {
+          const sev = data.cell.raw as string
+          if (sev === 'CRITICAL') data.cell.styles.textColor = [220, 38, 38]
+          else if (sev === 'HIGH') data.cell.styles.textColor = [234, 88, 12]
+          else if (sev === 'MEDIUM') data.cell.styles.textColor = [202, 138, 4]
+          else if (sev === 'LOW')  data.cell.styles.textColor = [22, 163, 74]
+        }
+      }
+    })
+
+    doc.save(`soc_report_${new Date().toISOString().slice(0,10)}.pdf`)
+    setExporting(false)
   }
 
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex items-center gap-2">
       <button
-        onClick={downloadCSV}
-        disabled={csvLoading}
-        className="flex items-center gap-2 px-4 py-2 bg-green-900/40 border border-green-700 text-green-400 rounded-lg"
+        onClick={exportCSV}
+        disabled={exporting || logs.length === 0}
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-green-700 text-green-400 bg-green-900/20 hover:bg-green-900/40 text-xs font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed"
       >
-        {csvLoading ? (
-          <>
-            <RefreshIcon />
-            Downloading...
-          </>
-        ) : (
-          <>
-            <Download size={15} />
-            Export CSV
-          </>
-        )}
+        <Download size={13} />
+        Export CSV
       </button>
 
       <button
-        onClick={downloadPDF}
-        disabled={pdfLoading || logs.length === 0}
-        className="flex items-center gap-2 px-4 py-2 bg-blue-900/40 border border-blue-700 text-blue-400 rounded-lg"
+        onClick={exportPDF}
+        disabled={exporting || logs.length === 0}
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-blue-700 text-blue-400 bg-blue-900/20 hover:bg-blue-900/40 text-xs font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed"
       >
-        {pdfLoading ? (
-          <>
-            <RefreshIcon />
-            Generating...
-          </>
-        ) : (
-          <>
-            <FileText size={15} />
-            Export PDF
-          </>
-        )}
+        <FileText size={13} />
+        Export PDF
       </button>
     </div>
-  )
-}
-
-function RefreshIcon() {
-  return (
-    <svg
-      className="animate-spin"
-      width="15"
-      height="15"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <path d="M21 12a9 9 0 1 1-6.2-8.6" />
-    </svg>
   )
 }

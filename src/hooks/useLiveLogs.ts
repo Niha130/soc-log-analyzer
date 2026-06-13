@@ -2,8 +2,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useSoundAlerts } from './useSoundAlerts'
 
-const API = 'https://soc-log-analyzer-api.onrender.com'
-
+const API = 'http://localhost:8000'
 export interface LogEntry {
   id:        string
   timestamp: string
