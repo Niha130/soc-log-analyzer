@@ -1,183 +1,249 @@
-import { useState } from 'react';
-import { AlertTriangle, CheckCircle, Clock, XCircle, Shield } from 'lucide-react';
-import type { Alert, AlertStatus } from '../types';
-import { SEVERITY_BG, STATUS_BG } from '../utils/mockData';
+// src/components/AlertSystem.tsx
+import { useState } from 'react'
+import { AlertTriangle, CheckCircle, Clock, XCircle, ChevronDown, ChevronUp } from 'lucide-react'
 
-interface Props {
-  alerts: Alert[];
-  updateAlertStatus: (id: string, status: AlertStatus) => void;
+type AlertStatus = 'OPEN' | 'INVESTIGATING' | 'RESOLVED' | 'FALSE_POSITIVE'
+
+interface AlertItem {
+  id:         string
+  timestamp?: string
+  severity:   string
+  category?:  string
+  sourceIp?:  string
+  destIp?:    string
+  hostname?:  string
+  user?:      string
+  message:    string
+  protocol?:  string
+  port?:      number
+  bytes?:     number
+  country?:   string
+  mitre?:     string
+  isThreat?:  boolean
+  ml?: {
+    isAnomaly:    boolean
+    anomalyScore: number
+  }
 }
 
-const STATUS_ICONS: Record<AlertStatus, React.ReactNode> = {
-  OPEN: <AlertTriangle size={13} className="text-[#ff4466]" />,
-  INVESTIGATING: <Clock size={13} className="text-[#ffaa00]" />,
-  RESOLVED: <CheckCircle size={13} className="text-[#00ff88]" />,
-  FALSE_POSITIVE: <XCircle size={13} className="text-[#4a5a7a]" />,
-};
+interface Props {
+  alerts:            AlertItem[]
+  updateAlertStatus: (id: string, status: AlertStatus) => void
+  onResolve?:        (id: string) => void
+}
 
-const STATUSES: AlertStatus[] = ['OPEN', 'INVESTIGATING', 'RESOLVED', 'FALSE_POSITIVE'];
+const SEV_BG: Record<string, string> = {
+  CRITICAL: 'bg-red-900/20 border-red-800',
+  HIGH:     'bg-orange-900/20 border-orange-800',
+  MEDIUM:   'bg-yellow-900/20 border-yellow-800',
+  LOW:      'bg-green-900/20 border-green-800',
+  INFO:     'bg-blue-900/20 border-blue-800',
+}
 
-export default function AlertSystem({ alerts, updateAlertStatus }: Props) {
-  const [filter, setFilter] = useState<AlertStatus | 'ALL'>('ALL');
-  const [selected, setSelected] = useState<Alert | null>(null);
+const SEV_TEXT: Record<string, string> = {
+  CRITICAL: 'text-red-400',
+  HIGH:     'text-orange-400',
+  MEDIUM:   'text-yellow-400',
+  LOW:      'text-green-400',
+  INFO:     'text-blue-400',
+}
 
-  const filtered = filter === 'ALL' ? alerts : alerts.filter(a => a.status === filter);
+const STATUS_BG: Record<AlertStatus, string> = {
+  OPEN:           'bg-red-900/50 text-red-300 border-red-700',
+  INVESTIGATING:  'bg-yellow-900/50 text-yellow-300 border-yellow-700',
+  RESOLVED:       'bg-green-900/50 text-green-300 border-green-700',
+  FALSE_POSITIVE: 'bg-gray-800 text-gray-500 border-gray-700',
+}
 
-  const counts: Record<string, number> = { ALL: alerts.length };
-  STATUSES.forEach(s => { counts[s] = alerts.filter(a => a.status === s).length; });
+const STATUSES: AlertStatus[] = ['OPEN', 'INVESTIGATING', 'RESOLVED', 'FALSE_POSITIVE']
+
+const RECOMMENDATIONS: Record<string, string[]> = {
+  MALWARE:    ['Isolate the affected host immediately', 'Run full AV scan', 'Capture memory image'],
+  INTRUSION:  ['Block source IP in firewall', 'Enable MFA on all accounts', 'Review auth logs'],
+  DATA_EXFIL: ['Block outbound connection', 'Audit data access logs', 'Notify security team'],
+  AUTH:       ['Reset affected account password', 'Check for lateral movement', 'Review login history'],
+  NETWORK:    ['Block scanning IP', 'Harden firewall rules', 'Monitor for follow-up attacks'],
+  POLICY:     ['Warn the user', 'Review policy compliance', 'Check for repeated violations'],
+  SYSTEM:     ['Check system integrity', 'Review recent changes', 'Verify backup status'],
+}
+
+export default function AlertSystem({ alerts, updateAlertStatus, onResolve }: Props) {
+  const [expanded,  setExpanded]  = useState<string | null>(null)
+  const [statuses,  setStatuses]  = useState<Record<string, AlertStatus>>({})
+  const [filter,    setFilter]    = useState<string>('all')
+
+  const getStatus = (id: string): AlertStatus => statuses[id] ?? 'OPEN'
+
+  const handleStatus = (id: string, status: AlertStatus) => {
+    setStatuses(prev => ({ ...prev, [id]: status }))
+    updateAlertStatus(id, status)
+    if (status === 'RESOLVED') onResolve?.(id)
+  }
+
+  const counts = {
+    CRITICAL: alerts.filter(a => a.severity === 'CRITICAL').length,
+    HIGH:     alerts.filter(a => a.severity === 'HIGH').length,
+    MEDIUM:   alerts.filter(a => a.severity === 'MEDIUM').length,
+    LOW:      alerts.filter(a => a.severity === 'LOW').length,
+  }
+
+  const filtered = alerts.filter(a =>
+    filter === 'all' ? true : a.severity === filter
+  )
 
   return (
-    <div className="flex h-full">
-      {/* List pane */}
-      <div className="flex flex-col w-full lg:w-[420px] border-r border-[#1a2744] shrink-0">
-        {/* Filter tabs */}
-        <div className="flex items-center gap-1 p-3 border-b border-[#1a2744] bg-[#0f1624]">
-          {(['ALL', ...STATUSES] as const).map(s => (
-            <button
-              key={s}
-              onClick={() => setFilter(s)}
-              className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] font-mono transition-all ${
-                filter === s
-                  ? 'bg-[#00d4ff]/15 text-[#00d4ff] border border-[#00d4ff]/30'
-                  : 'text-[#4a5a7a] hover:text-[#c8d8f0] border border-transparent'
-              }`}
-            >
-              {s === 'ALL' ? 'All' : s.replace('_', ' ')}
-              <span className="bg-[#1a2744] px-1 rounded text-[10px]">{counts[s]}</span>
-            </button>
-          ))}
-        </div>
+    <div className="p-4 space-y-4">
 
-        {/* Alert list */}
-        <div className="flex-1 overflow-y-auto">
-          {filtered.length === 0 && (
-            <div className="flex flex-col items-center justify-center h-40 text-[#4a5a7a] font-mono text-xs">
-              <Shield size={24} className="mb-2 opacity-30" />
-              No alerts in this category
-            </div>
-          )}
-          {filtered.map(alert => (
-            <div
-              key={alert.id}
-              onClick={() => setSelected(alert)}
-              className={`p-3 border-b border-[#1a2744]/60 cursor-pointer transition-all hover:bg-[#0f1624] ${
-                selected?.id === alert.id ? 'bg-[#0f1624] border-l-2 border-l-[#00d4ff]' : 'border-l-2 border-l-transparent'
-              } ${alert.severity === 'CRITICAL' && alert.status === 'OPEN' ? 'alert-critical' : ''}`}
-            >
-              <div className="flex items-start justify-between gap-2 mb-1.5">
-                <span className={`px-1.5 py-0.5 rounded border font-mono text-[10px] ${SEVERITY_BG[alert.severity]}`}>
-                  {alert.severity}
-                </span>
-                <span className={`px-1.5 py-0.5 rounded border font-mono text-[10px] flex items-center gap-1 ${STATUS_BG[alert.status]}`}>
-                  {STATUS_ICONS[alert.status]}
-                  {alert.status.replace('_', ' ')}
-                </span>
-              </div>
-              <p className="font-mono text-xs text-[#c8d8f0] mb-1 leading-relaxed">{alert.title}</p>
-              <div className="flex items-center gap-3 font-mono text-[10px] text-[#4a5a7a]">
-                <span>{alert.affectedHost}</span>
-                {alert.mitreId && <span className="text-[#a855f7]">{alert.mitreId}</span>}
-                <span>{alert.timestamp.slice(11, 19)}</span>
-              </div>
-            </div>
-          ))}
-        </div>
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {(['CRITICAL','HIGH','MEDIUM','LOW'] as const).map(sev => (
+          <button
+            key={sev}
+            onClick={() => setFilter(filter === sev ? 'all' : sev)}
+            className={`rounded-xl border p-3 text-left transition-all ${SEV_BG[sev]} ${
+              filter === sev ? 'ring-2 ring-blue-500' : 'hover:opacity-80'
+            }`}
+          >
+            <p className={`text-2xl font-bold ${SEV_TEXT[sev]}`}>{counts[sev]}</p>
+            <p className="text-xs text-gray-500 mt-0.5">{sev}</p>
+          </button>
+        ))}
       </div>
 
-      {/* Detail pane */}
-      <div className="flex-1 overflow-y-auto hidden lg:block">
-        {!selected ? (
-          <div className="flex flex-col items-center justify-center h-full text-[#4a5a7a]">
-            <Shield size={40} className="mb-3 opacity-20" />
-            <p className="font-mono text-sm">Select an alert to investigate</p>
-          </div>
-        ) : (
-          <div className="p-5 space-y-5">
-            {/* Header */}
-            <div>
-              <div className="flex items-center gap-2 mb-3">
-                <span className={`px-2 py-1 rounded border font-mono text-xs ${SEVERITY_BG[selected.severity]}`}>
-                  {selected.severity}
-                </span>
-                <span className="font-mono text-xs text-[#4a5a7a]">{selected.id}</span>
-                {selected.mitreId && (
-                  <span className="px-2 py-1 rounded border border-[#a855f7]/40 text-[#a855f7] bg-[#a855f7]/10 font-mono text-xs">
-                    MITRE {selected.mitreId}
-                  </span>
-                )}
-              </div>
-              <h2 className="font-mono text-base text-[#c8d8f0] mb-2">{selected.title}</h2>
-              <p className="font-sans text-sm text-[#4a5a7a] leading-relaxed">{selected.description}</p>
-            </div>
+      {/* Filter pills */}
+      <div className="flex flex-wrap gap-2">
+        {(['all','CRITICAL','HIGH','MEDIUM','LOW'] as const).map(f => (
+          <button
+            key={f}
+            onClick={() => setFilter(f)}
+            className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+              filter === f
+                ? 'bg-blue-600 border-blue-500 text-white'
+                : 'bg-gray-800 border-gray-700 text-gray-400 hover:text-gray-200'
+            }`}
+          >
+            {f === 'all'
+              ? `All (${alerts.length})`
+              : `${f} (${counts[f as keyof typeof counts] ?? 0})`}
+          </button>
+        ))}
+      </div>
 
-            {/* Metadata grid */}
-            <div className="grid grid-cols-2 gap-3 bg-[#0f1624] rounded-lg border border-[#1a2744] p-4">
-              {[
-                ['Affected Host', selected.affectedHost],
-                ['Source IP', selected.sourceIp],
-                ['Category', selected.category],
-                ['MITRE Tactic', selected.mitreTactic || '—'],
-                ['Detected', selected.timestamp.replace('T', ' ').slice(0, 19)],
-                ['Last Updated', selected.updatedAt.replace('T', ' ').slice(0, 19)],
-                ['Analyst', selected.analyst || 'Unassigned'],
-                ['Related Logs', selected.relatedLogs.join(', ')],
-              ].map(([k, v]) => (
-                <div key={k}>
-                  <p className="font-mono text-[10px] text-[#4a5a7a] uppercase mb-0.5">{k}</p>
-                  <p className="font-mono text-xs text-[#c8d8f0]">{v}</p>
-                </div>
-              ))}
-            </div>
+      {/* Alert list */}
+      {filtered.length === 0 ? (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-12 text-center">
+          <AlertTriangle size={32} className="text-gray-700 mx-auto mb-3" />
+          <p className="text-gray-500 text-sm">
+            {alerts.length === 0
+              ? 'No alerts yet — system is monitoring your logs…'
+              : 'No alerts match this filter.'}
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {filtered.map(alert => {
+            const status   = getStatus(alert.id)
+            const isOpen   = expanded === alert.id
+            const recs     = RECOMMENDATIONS[alert.category ?? ''] ?? ['Investigate and respond appropriately']
 
-            {/* Status actions */}
-            <div>
-              <p className="font-mono text-xs text-[#4a5a7a] uppercase mb-2">Update Status</p>
-              <div className="flex flex-wrap gap-2">
-                {STATUSES.map(status => (
-                  <button
-                    key={status}
-                    onClick={() => {
-                      updateAlertStatus(selected.id, status);
-                      setSelected(a => a ? { ...a, status } : null);
-                    }}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded border font-mono text-xs transition-all ${
-                      selected.status === status
-                        ? STATUS_BG[status]
-                        : 'border-[#1a2744] text-[#4a5a7a] hover:border-[#00d4ff]/30 hover:text-[#00d4ff]'
-                    }`}
-                  >
-                    {STATUS_ICONS[status]}
-                    {status.replace('_', ' ')}
-                  </button>
-                ))}
-              </div>
-            </div>
+            return (
+              <div
+                key={alert.id}
+                className={`rounded-xl border overflow-hidden ${SEV_BG[alert.severity] ?? 'bg-gray-800 border-gray-700'}`}
+              >
+                {/* Header row */}
+                <div
+                  className="px-4 py-3 flex items-center gap-3 cursor-pointer hover:bg-white/5 transition-colors"
+                  onClick={() => setExpanded(isOpen ? null : alert.id)}
+                >
+                  <AlertTriangle size={14} className={`shrink-0 ${SEV_TEXT[alert.severity] ?? 'text-gray-400'}`} />
 
-            {/* Timeline */}
-            <div>
-              <p className="font-mono text-xs text-[#4a5a7a] uppercase mb-2">Alert Timeline</p>
-              <div className="space-y-2">
-                {[
-                  { time: selected.timestamp, event: 'Alert auto-generated by detection engine', color: 'bg-[#ff4466]' },
-                  { time: selected.updatedAt, event: `Status updated to ${selected.status}`, color: 'bg-[#00d4ff]' },
-                  ...(selected.analyst ? [{ time: selected.updatedAt, event: `Assigned to ${selected.analyst}`, color: 'bg-[#a855f7]' }] : []),
-                ].map((item, i) => (
-                  <div key={i} className="flex gap-3 items-start">
-                    <div className="flex flex-col items-center">
-                      <span className={`w-2 h-2 rounded-full ${item.color} shrink-0 mt-1`} />
-                      {i < 2 && <span className="w-px h-6 bg-[#1a2744]" />}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className={`text-sm font-semibold ${SEV_TEXT[alert.severity] ?? 'text-gray-300'}`}>
+                        {alert.message}
+                      </span>
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${STATUS_BG[status]}`}>
+                        {status.replace('_', ' ')}
+                      </span>
                     </div>
-                    <div>
-                      <p className="font-mono text-[10px] text-[#4a5a7a]">{item.time.replace('T', ' ').slice(0, 19)}</p>
-                      <p className="font-mono text-xs text-[#c8d8f0]">{item.event}</p>
+                    <p className="text-xs text-gray-500 mt-0.5 font-mono">
+                      {alert.sourceIp && <span className="text-blue-400">{alert.sourceIp}</span>}
+                      {alert.hostname && <span> → {alert.hostname}</span>}
+                      {alert.mitre    && <span className="ml-2 text-purple-400">· {alert.mitre}</span>}
+                      {alert.country  && <span className="ml-2">· {alert.country}</span>}
+                    </p>
+                  </div>
+
+                  {/* Status dropdown */}
+                  <select
+                    value={status}
+                    onClick={e => e.stopPropagation()}
+                    onChange={e => handleStatus(alert.id, e.target.value as AlertStatus)}
+                    className="text-xs bg-gray-800 border border-gray-700 text-gray-300 rounded px-2 py-1 outline-none shrink-0"
+                  >
+                    {STATUSES.map(s => (
+                      <option key={s} value={s}>{s.replace('_', ' ')}</option>
+                    ))}
+                  </select>
+
+                  {isOpen
+                    ? <ChevronUp size={14} className="text-gray-500 shrink-0" />
+                    : <ChevronDown size={14} className="text-gray-500 shrink-0" />
+                  }
+                </div>
+
+                {/* Expanded detail */}
+                {isOpen && (
+                  <div className="border-t border-gray-700/50 px-4 py-4 grid grid-cols-1 md:grid-cols-3 gap-4 text-xs bg-gray-900/50">
+
+                    {/* Details */}
+                    <div className="space-y-1.5">
+                      <p className="text-gray-500 font-semibold uppercase tracking-wide text-[10px] mb-2">Event Details</p>
+                      {alert.category && <p className="text-gray-300">Category: <span className="text-orange-400">{alert.category}</span></p>}
+                      {alert.sourceIp && <p className="text-gray-300">Source IP: <span className="text-blue-400 font-mono">{alert.sourceIp}</span></p>}
+                      {alert.destIp   && <p className="text-gray-300">Destination: <span className="font-mono text-gray-400">{alert.destIp}</span></p>}
+                      {alert.hostname && <p className="text-gray-300">Host: <span className="font-mono text-gray-400">{alert.hostname}</span></p>}
+                      {alert.user     && <p className="text-gray-300">User: <span className="font-mono text-gray-400">{alert.user}</span></p>}
+                      {alert.protocol && <p className="text-gray-300">Protocol: <span className="text-gray-400">{alert.protocol}</span></p>}
+                      {alert.port     && <p className="text-gray-300">Port: <span className="font-mono text-gray-400">{alert.port}</span></p>}
+                    </div>
+
+                    {/* Threat info */}
+                    <div className="space-y-1.5">
+                      <p className="text-gray-500 font-semibold uppercase tracking-wide text-[10px] mb-2">Threat Info</p>
+                      {alert.mitre   && <p className="text-gray-300">MITRE: <span className="text-purple-400 font-mono">{alert.mitre}</span></p>}
+                      {alert.country && <p className="text-gray-300">Country: <span className="text-gray-400">{alert.country}</span></p>}
+                      {alert.bytes   && <p className="text-gray-300">Bytes: <span className="font-mono text-gray-400">{alert.bytes.toLocaleString()}</span></p>}
+                      {alert.timestamp && (
+                        <p className="text-gray-300 flex items-center gap-1">
+                          <Clock size={10} className="text-gray-500" />
+                          {alert.timestamp}
+                        </p>
+                      )}
+                      {alert.ml?.isAnomaly && (
+                        <p className="text-purple-400 flex items-center gap-1">
+                          🧠 ML Anomaly — score: {alert.ml.anomalyScore}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Recommended actions */}
+                    <div className="space-y-1.5">
+                      <p className="text-gray-500 font-semibold uppercase tracking-wide text-[10px] mb-2">Recommended Actions</p>
+                      <ol className="space-y-1.5 list-decimal list-inside">
+                        {recs.map((r, i) => (
+                          <li key={i} className="text-gray-300">{r}</li>
+                        ))}
+                      </ol>
                     </div>
                   </div>
-                ))}
+                )}
               </div>
-            </div>
-          </div>
-        )}
-      </div>
+            )
+          })}
+        </div>
+      )}
     </div>
-  );
+  )
 }

@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 
-const API = 'http://localhost:8000'
+const API = 'https://soc-log-analyzer-api.onrender.com'
 
 interface HeatCell {
   day:      string

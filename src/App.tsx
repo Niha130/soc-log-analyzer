@@ -1,14 +1,14 @@
 // src/App.tsx
 import React, { useState, useEffect } from 'react'
 import { Shield, Volume2, VolumeX, RefreshCw } from 'lucide-react'
-import { useLiveLogs } from './hooks/useLiveLogs'
-import Dashboard        from './components/Dashboard'
-import LogAnalyzer      from './components/LogAnalyzer'
-import AlertSystem      from './components/AlertSystem'
-import ThreatIntelligence from './components/ThreatIntelligence'
-import DataSources      from './components/DataSources'
-import AttackHeatmap    from './components/AttackHeatmap'
-import AnomalyDetection from './components/AnomalyDetection'
+import { useLiveLogs }      from './hooks/useLiveLogs'
+import Dashboard            from './components/Dashboard'
+import LogAnalyzer          from './components/LogAnalyzer'
+import AlertSystem          from './components/AlertSystem'
+import ThreatIntelligence   from './components/ThreatIntelligence'
+import DataSources          from './components/DataSources'
+import AttackHeatmap        from './components/AttackHeatmap'
+import AnomalyDetection     from './components/AnomalyDetection'
 
 type Tab = 'dashboard' | 'logs' | 'alerts' | 'intel' | 'heatmap' | 'anomalies' | 'sources'
 
@@ -36,8 +36,8 @@ function LiveClock() {
 }
 
 export default function App() {
-  const [activeTab,     setActiveTab]     = useState<Tab>('dashboard')
-  const [soundEnabled,  setSoundEnabled]  = useState(true)
+  const [activeTab,    setActiveTab]    = useState<Tab>('dashboard')
+  const [soundEnabled, setSoundEnabled] = useState(true)
 
   const { logs, alerts, metrics, loading, error, refetch } = useLiveLogs(soundEnabled)
 
@@ -51,7 +51,7 @@ export default function App() {
           <span className="font-mono text-sm font-bold text-white tracking-widest uppercase">
             SOC Log Analyzer
           </span>
-          <span className="text-xs text-gray-500 font-mono">Threat Alert System v2.0</span>
+          <span className="text-xs text-gray-500 font-mono">v2.0</span>
         </div>
 
         <div className="flex items-center gap-3">
@@ -64,8 +64,8 @@ export default function App() {
             onClick={() => setSoundEnabled(p => !p)}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-xs font-mono transition-all ${
               soundEnabled
-                ? 'border-blue-700 text-blue-400 bg-blue-900/20 hover:bg-blue-900/40'
-                : 'border-gray-700 text-gray-500 bg-gray-800/40 hover:bg-gray-700/40'
+                ? 'border-blue-700 text-blue-400 bg-blue-900/20'
+                : 'border-gray-700 text-gray-500 bg-gray-800/40'
             }`}
           >
             {soundEnabled ? <Volume2 size={13} /> : <VolumeX size={13} />}
@@ -75,22 +75,21 @@ export default function App() {
           <button
             onClick={refetch}
             disabled={loading}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-gray-700 text-xs text-gray-400 hover:text-white hover:border-gray-500 transition-all"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-gray-700 text-xs text-gray-400 hover:text-white transition-all"
           >
             <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
             Refresh
           </button>
 
           <div className={`flex items-center gap-2 px-3 py-1.5 rounded border text-xs font-mono ${
-            loading
-              ? 'border-yellow-700 text-yellow-400 bg-yellow-900/20'
-              : error
-              ? 'border-red-700 text-red-400 bg-red-900/20'
-              : 'border-green-700 text-green-400 bg-green-900/20'
+            loading ? 'border-yellow-700 text-yellow-400 bg-yellow-900/20'
+            : error  ? 'border-red-700 text-red-400 bg-red-900/20'
+                     : 'border-green-700 text-green-400 bg-green-900/20'
           }`}>
             <span className={`w-1.5 h-1.5 rounded-full ${
-              loading ? 'bg-yellow-400 animate-pulse' :
-              error   ? 'bg-red-400' : 'bg-green-400 animate-pulse'
+              loading ? 'bg-yellow-400 animate-pulse'
+              : error ? 'bg-red-400'
+                      : 'bg-green-400 animate-pulse'
             }`} />
             {loading ? 'Connecting...' : error ? 'Offline' : 'Live'}
           </div>
@@ -127,23 +126,13 @@ export default function App() {
 
       {/* Main Content */}
       <main className="flex-1 overflow-auto">
-        {activeTab === 'dashboard' && (
-          <Dashboard logs={logs} alerts={alerts} metrics={metrics} loading={loading} />
-        )}
-        {activeTab === 'logs' && (
-          <LogAnalyzer logs={logs} isLive={!loading && !error} />
-        )}
-        {activeTab === 'alerts' && (
-          <AlertSystem alerts={alerts} updateAlertStatus={() => {}} />
-        )}
-        {activeTab === 'intel' && <ThreatIntelligence />}
-        {activeTab === 'heatmap' && (
-          <div className="p-4"><AttackHeatmap /></div>
-        )}
-        {activeTab === 'anomalies' && (
-          <div className="p-4"><AnomalyDetection /></div>
-        )}
-        {activeTab === 'sources' && <DataSources />}
+        {activeTab === 'dashboard'  && <Dashboard  logs={logs} alerts={alerts} metrics={metrics} loading={loading} />}
+        {activeTab === 'logs'       && <LogAnalyzer logs={logs} isLive={!loading && !error} />}
+        {activeTab === 'alerts' && <AlertSystem alerts={alerts as any} updateAlertStatus={() => {}} />}
+        {activeTab === 'intel'      && <ThreatIntelligence logs={logs} alerts={alerts} />}
+        {activeTab === 'heatmap'    && <div className="p-4"><AttackHeatmap /></div>}
+        {activeTab === 'anomalies'  && <div className="p-4"><AnomalyDetection /></div>}
+        {activeTab === 'sources'    && <DataSources connected={!error} metrics={null} />}
       </main>
     </div>
   )
