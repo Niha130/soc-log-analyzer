@@ -125,9 +125,7 @@ export function useLiveLogs(soundEnabled: boolean = true) {
                 }, 800)  // slight delay after the 2-beep so they don't overlap
               }
 
-            } else if (alert.severity === 'HIGH') {
-              playSound('high')       // 1 beep
-            }
+            } 
           }
         }
       }
