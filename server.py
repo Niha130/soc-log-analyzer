@@ -243,10 +243,18 @@ def get_logs():
 
 @app.get("/api/alerts")
 def get_alerts():
-    with LOGS_LOCK:
-        logs = list(LIVE_LOGS)
-    alerts = [l for l in logs if l["isThreat"]]
-    return {"alerts": alerts[-20:]}
+    random.seed(int(time.time()))
+    # Return only 1 fresh alert per call — only CRITICAL and HIGH
+    log = generate_log(index=random.randint(0, 9999))
+    # Keep generating until we get a threat
+    attempts = 0
+    while not log["isThreat"] and attempts < 20:
+        log = generate_log(index=random.randint(0, 9999))
+        attempts += 1
+    if log["isThreat"]:
+        maybe_telegram(log)
+        return {"alerts": [log]}
+    return {"alerts": []}
 
 @app.get("/api/heatmap")
 def get_heatmap():
