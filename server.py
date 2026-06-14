@@ -234,14 +234,12 @@ def health():
 
 @app.get("/api/logs")
 def get_logs():
-    with LOGS_LOCK:
-        logs = list(LIVE_LOGS)
-    logs = run_ml(logs)
-    return {
-        "logs":       logs,
-        "total":      len(logs),
-        "ml_enabled": ML_AVAILABLE
-    }
+    random.seed(int(time.time()))
+    # Return only 1 fresh log per call
+    log = generate_log(index=random.randint(0, 9999))
+    log = run_ml([log])[0]
+    maybe_telegram(log)
+    return {"logs": [log], "total": 1, "ml_enabled": ML_AVAILABLE}
 
 @app.get("/api/alerts")
 def get_alerts():
