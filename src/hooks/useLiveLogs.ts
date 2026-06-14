@@ -167,7 +167,7 @@ export function useLiveLogs(soundEnabled: boolean = true) {
 
   useEffect(() => {
     fetchAll()
-    const timer = setInterval(fetchAll, 3_000)
+    const timer = setInterval(fetchAll, 1_000)
     return () => clearInterval(timer)
   }, [fetchAll])
 
