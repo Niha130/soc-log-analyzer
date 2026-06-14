@@ -2,7 +2,8 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useSoundAlerts } from './useSoundAlerts'
 
-const API = 'https://soc-log-analyzer-api.onrender.com'
+const API = 'http://localhost:8002'
+const STORAGE_KEY = 'soc_accumulated_logs'
 
 export interface LogEntry {
   id:        string
@@ -48,15 +49,31 @@ export interface Metrics {
   timeSeriesData:    TimePoint[]
 }
 
+// ── Load saved logs from localStorage on startup ─────────────────────────
+function loadSavedLogs(): LogEntry[] {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY)
+    return saved ? JSON.parse(saved) : []
+  } catch {
+    return []
+  }
+}
+
+function saveLogs(logs: LogEntry[]) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(logs.slice(0, 500)))
+  } catch {}
+}
+
 export function useLiveLogs(soundEnabled: boolean = true) {
-  const [logs,    setLogs]    = useState<LogEntry[]>([])
+  const [logs,    setLogs]    = useState<LogEntry[]>(() => loadSavedLogs())
   const [alerts,  setAlerts]  = useState<AlertEntry[]>([])
   const [metrics, setMetrics] = useState<Metrics | null>(null)
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState<string | null>(null)
 
-  const accumulatedLogs = useRef<LogEntry[]>([])
-  const fetchIndexRef   = useRef(0)
+  const accumulatedLogs = useRef<LogEntry[]>(loadSavedLogs())
+  const seenIds         = useRef<Set<string>>(new Set(loadSavedLogs().map(l => l.id)))
   const soundedIds      = useRef<Set<string>>(new Set())
   const timeSeriesRef   = useRef<TimePoint[]>([])
   const { playSound }   = useSoundAlerts()
@@ -64,7 +81,7 @@ export function useLiveLogs(soundEnabled: boolean = true) {
   const fetchAll = useCallback(async () => {
     try {
       const controller = new AbortController()
-      const timeout = setTimeout(() => controller.abort(), 4000)
+      const timeout = setTimeout(() => controller.abort(), 5000)
 
       const [logsRes, alertsRes] = await Promise.all([
         fetch(`${API}/api/logs`,   { signal: controller.signal }),
@@ -80,26 +97,22 @@ export function useLiveLogs(soundEnabled: boolean = true) {
       const newLogs:   LogEntry[]   = logsJson.logs    || []
       const newAlerts: AlertEntry[] = alertsJson.alerts || []
 
-      // ── On first load add first 5 logs immediately ───────────────────
-      if (accumulatedLogs.current.length === 0 && newLogs.length > 0) {
-        const initial = newLogs.slice(0, 5).map((l, i) => ({
-          ...l,
-          id: `${l.id}-init-${i}`
-        }))
-        accumulatedLogs.current = initial
-      } else if (newLogs.length > 0) {
-        // Add 1 new log per fetch after initial load
-        const idx  = fetchIndexRef.current % newLogs.length
-        const pick = newLogs[idx]
-        const uniqueLog = {
-          ...pick,
-          id: `${pick.id}-${Date.now()}`
+      // ── Add only NEW logs we haven't seen before ─────────────────────
+      let added = 0
+      for (const log of newLogs) {
+        if (!seenIds.current.has(log.id)) {
+          seenIds.current.add(log.id)
+          accumulatedLogs.current = [log, ...accumulatedLogs.current].slice(0, 500)
+          added++
         }
-        accumulatedLogs.current = [uniqueLog, ...accumulatedLogs.current].slice(0, 500)
       }
-      fetchIndexRef.current += 1
 
-      // ── Sound: 2 beeps ONLY for CRITICAL ────────────────────────────
+      // ── Save to localStorage so refresh doesn't lose data ────────────
+      if (added > 0) {
+        saveLogs(accumulatedLogs.current)
+      }
+
+      // ── Sound: 2 beeps ONLY for CRITICAL, once per alert ────────────
       if (soundEnabled) {
         for (const alert of newAlerts) {
           if (alert.severity === 'CRITICAL' && !soundedIds.current.has(alert.id)) {
@@ -154,7 +167,7 @@ export function useLiveLogs(soundEnabled: boolean = true) {
 
   useEffect(() => {
     fetchAll()
-    const timer = setInterval(fetchAll, 2_000)
+    const timer = setInterval(fetchAll, 3_000)
     return () => clearInterval(timer)
   }, [fetchAll])
 

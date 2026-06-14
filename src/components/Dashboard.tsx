@@ -33,7 +33,7 @@ const SEV_BG: Record<string, string> = {
   INFO:     'bg-blue-900/30 border-blue-800',
 }
 
-const PIE_COLORS = ['#dc2626', '#ea580c', '#ca8a04', '#16a34a', '#2563eb']
+const PIE_COLORS = ['#3b26dc', '#ea650c', '#ca8a04', '#16a1a3', '#2563eb']
 
 function StatCard({ label, value, sub, icon, color }: {
   label: string; value: number | string; sub?: string
@@ -131,29 +131,29 @@ export default function Dashboard({ logs, alerts, metrics, loading }: Props) {
               <AreaChart data={timeData}>
                 <defs>
   <linearGradient id="critGrad" x1="0" y1="0" x2="0" y2="1">
-    <stop offset="5%"  stopColor="#ef4444" stopOpacity={0.3} />
-    <stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
+    <stop offset="5%"  stopColor="#445bef" stopOpacity={0.3} />
+    <stop offset="95%" stopColor="#6144ef" stopOpacity={0} />
   </linearGradient>
   <linearGradient id="highGrad" x1="0" y1="0" x2="0" y2="1">
-    <stop offset="5%"  stopColor="#f97316" stopOpacity={0.3} />
-    <stop offset="95%" stopColor="#f97316" stopOpacity={0} />
+    <stop offset="5%"  stopColor="#f916c8" stopOpacity={0.3} />
+    <stop offset="95%" stopColor="#f916c0" stopOpacity={0} />
   </linearGradient>
   <linearGradient id="medGrad" x1="0" y1="0" x2="0" y2="1">
-    <stop offset="5%"  stopColor="#a855f7" stopOpacity={0.3} />
-    <stop offset="95%" stopColor="#a855f7" stopOpacity={0} />
+    <stop offset="5%"  stopColor="#f78e55" stopOpacity={0.3} />
+    <stop offset="95%" stopColor="#f79055" stopOpacity={0} />
   </linearGradient>
   <linearGradient id="lowGrad" x1="0" y1="0" x2="0" y2="1">
-    <stop offset="5%"  stopColor="#22d3ee" stopOpacity={0.3} />
-    <stop offset="95%" stopColor="#22d3ee" stopOpacity={0} />
+    <stop offset="5%"  stopColor="#22d6ee" stopOpacity={0.3} />
+    <stop offset="95%" stopColor="#22cfee" stopOpacity={0} />
   </linearGradient>
 </defs>
                 <XAxis dataKey="time" tick={{ fill: '#6b7280', fontSize: 10 }} interval="preserveStartEnd" />
                 <YAxis tick={{ fill: '#6b7280', fontSize: 10 }} />
                 <Tooltip contentStyle={{ background: '#111827', border: '1px solid #374151', borderRadius: 8, fontSize: 12 }} />
-                <Area type="monotone" dataKey="critical" stroke="#ef4444" fill="none" strokeWidth={2} name="Critical" dot={false} />
-                <Area type="monotone" dataKey="high"     stroke="#f97316" fill="none" strokeWidth={2} name="High"     dot={false} />
-                <Area type="monotone" dataKey="medium"   stroke="#eab308" fill="none" strokeWidth={2} name="Medium"   dot={false} />
-                <Area type="monotone" dataKey="low"      stroke="#22c55e" fill="none" strokeWidth={2} name="Low"      dot={false} />
+                <Area type="monotone" dataKey="critical" stroke="#444def" fill="none" strokeWidth={2} name="Critical" dot={false} />
+                <Area type="monotone" dataKey="high"     stroke="#f91687" fill="none" strokeWidth={2} name="High"     dot={false} />
+                <Area type="monotone" dataKey="medium"   stroke="#ea8408" fill="none" strokeWidth={2} name="Medium"   dot={false} />
+                <Area type="monotone" dataKey="low"      stroke="#22afc5" fill="none" strokeWidth={2} name="Low"      dot={false} />
               </AreaChart>
             </ResponsiveContainer>
           ) : catData.length > 0 ? (
@@ -205,7 +205,7 @@ export default function Dashboard({ logs, alerts, metrics, loading }: Props) {
               <XAxis type="number" tick={{ fill: '#6b7280', fontSize: 10 }} />
               <YAxis dataKey="name" type="category" width={90} tick={{ fill: '#9ca3af', fontSize: 10 }} />
               <Tooltip contentStyle={{ background: '#111827', border: '1px solid #374151', borderRadius: 8, fontSize: 12 }} />
-              <Bar dataKey="count" fill="#f97316" radius={[0,4,4,0]} />
+              <Bar dataKey="count" fill="#6d16f9" radius={[0,4,4,0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>

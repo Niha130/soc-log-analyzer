@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 
-const API = 'http://localhost:8001'
+const API = 'http://localhost:8002'
 
 interface HeatCell {
   day:      string
