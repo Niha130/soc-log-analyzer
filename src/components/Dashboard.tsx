@@ -126,7 +126,7 @@ export default function Dashboard({ logs, alerts, metrics, loading }: Props) {
             <div className="h-44 flex items-center justify-center text-gray-600 text-sm animate-pulse">
               Fetching data…
             </div>
-          ) : timeData.length >= 2 ? (
+          ) : timeData.length >= 1 ? (
             <ResponsiveContainer width="100%" height={180}>
               <AreaChart data={timeData}>
                 <defs>
