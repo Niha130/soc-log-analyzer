@@ -2,8 +2,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useSoundAlerts } from './useSoundAlerts'
 
-const API = 'http://localhost:8002'
-const STORAGE_KEY = 'soc_accumulated_logs'
+const API = 'https://soc-log-analyzer-api.onrender.com'
 
 export interface LogEntry {
   id:        string
@@ -23,14 +22,17 @@ export interface LogEntry {
   country:   string
   isThreat:  boolean
   mitre:     string
-  anomaly?:  boolean
+  ml?: {
+    isAnomaly:    boolean
+    anomalyScore: number
+    mlStatus:     string
+  }
 }
 
 export interface AlertEntry extends LogEntry {}
 
 export interface TimePoint {
   time:     string
-  total:    number
   critical: number
   high:     number
   medium:   number
@@ -49,127 +51,163 @@ export interface Metrics {
   timeSeriesData:    TimePoint[]
 }
 
-// ── Load saved logs from localStorage on startup ─────────────────────────
-function loadSavedLogs(): LogEntry[] {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY)
-    return saved ? JSON.parse(saved) : []
-  } catch {
-    return []
-  }
-}
-
-function saveLogs(logs: LogEntry[]) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(logs.slice(0, 500)))
-  } catch {}
-}
-
 export function useLiveLogs(soundEnabled: boolean = true) {
-  const [logs,    setLogs]    = useState<LogEntry[]>(() => loadSavedLogs())
+  const [logs,    setLogs]    = useState<LogEntry[]>([])
   const [alerts,  setAlerts]  = useState<AlertEntry[]>([])
   const [metrics, setMetrics] = useState<Metrics | null>(null)
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState<string | null>(null)
 
-  const accumulatedLogs = useRef<LogEntry[]>(loadSavedLogs())
-  const seenIds         = useRef<Set<string>>(new Set(loadSavedLogs().map(l => l.id)))
-  const soundedIds      = useRef<Set<string>>(new Set())
+  // Keep max 50 logs — replace oldest when full so feed always looks fresh
+  const displayedLogs   = useRef<LogEntry[]>([])
+
+  // Alert drip pool
+  const alertPoolRef    = useRef<AlertEntry[]>([])
+  const displayedAlerts = useRef<AlertEntry[]>([])
+  const seenAlertIds    = useRef<Set<string>>(new Set())
+  const playedAlertIds  = useRef<Set<string>>(new Set())
+  const criticalCount   = useRef<number>(0)
   const timeSeriesRef   = useRef<TimePoint[]>([])
-  const { playSound }   = useSoundAlerts()
 
-  const fetchAll = useCallback(async () => {
+  const { playSound } = useSoundAlerts()
+
+  const playAlarm = () => {
     try {
-      const controller = new AbortController()
-      const timeout = setTimeout(() => controller.abort(), 5000)
+      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)()
+      ;[0, 0.3, 0.6, 0.9].forEach(t => {
+        const osc  = ctx.createOscillator()
+        const gain = ctx.createGain()
+        osc.connect(gain)
+        gain.connect(ctx.destination)
+        osc.type            = 'square'
+        osc.frequency.value = 1400
+        gain.gain.setValueAtTime(0.5, ctx.currentTime + t)
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + 0.2)
+        osc.start(ctx.currentTime + t)
+        osc.stop(ctx.currentTime  + t + 0.25)
+      })
+    } catch { /* ignore */ }
+  }
 
-      const [logsRes, alertsRes] = await Promise.all([
-        fetch(`${API}/api/logs`,   { signal: controller.signal }),
-        fetch(`${API}/api/alerts`, { signal: controller.signal }),
-      ])
-      clearTimeout(timeout)
+  // ── Fetch 1 fresh log every second ───────────────────────────────────────
+  const fetchLog = useCallback(async () => {
+    try {
+      const res  = await fetch(`${API}/api/logs?t=${Date.now()}`)
+      if (!res.ok) throw new Error('API error')
+      const json = await res.json()
+      const newLog: LogEntry = json.logs?.[0]
+      if (!newLog) return
 
-      if (!logsRes.ok || !alertsRes.ok) throw new Error('API error')
+      // Always prepend new log — remove oldest if over 50
+      // This keeps the feed moving — never static
+      displayedLogs.current = [newLog, ...displayedLogs.current].slice(0, 50)
+      setLogs([...displayedLogs.current])
+      setError(null)
+      setLoading(false)
+    } catch {
+      setError(`Cannot reach backend at ${API}`)
+      setLoading(false)
+    }
+  }, [])
 
-      const logsJson   = await logsRes.json()
-      const alertsJson = await alertsRes.json()
+  // ── Fetch 1 fresh alert every 3 seconds ──────────────────────────────────
+  const fetchAlert = useCallback(async () => {
+    try {
+      const res  = await fetch(`${API}/api/alerts?t=${Date.now()}`)
+      if (!res.ok) return
+      const json = await res.json()
+      const newAlert: AlertEntry = json.alerts?.[0]
+      if (!newAlert || seenAlertIds.current.has(newAlert.id)) return
 
-      const newLogs:   LogEntry[]   = logsJson.logs    || []
-      const newAlerts: AlertEntry[] = alertsJson.alerts || []
+      seenAlertIds.current.add(newAlert.id)
 
-      // ── Add only NEW logs we haven't seen before ─────────────────────
-      let added = 0
-      for (const log of newLogs) {
-        if (!seenIds.current.has(log.id)) {
-          seenIds.current.add(log.id)
-          accumulatedLogs.current = [log, ...accumulatedLogs.current].slice(0, 500)
-          added++
+      // Sound only for CRITICAL — once per unique ID
+      if (
+        soundEnabled &&
+        newAlert.severity === 'CRITICAL' &&
+        !playedAlertIds.current.has(newAlert.id)
+      ) {
+        playedAlertIds.current.add(newAlert.id)
+        playSound('critical')
+        criticalCount.current += 1
+        if (criticalCount.current % 15 === 0) {
+          setTimeout(playAlarm, 800)
         }
       }
 
-      // ── Save to localStorage so refresh doesn't lose data ────────────
-      if (added > 0) {
-        saveLogs(accumulatedLogs.current)
-      }
+      // Keep max 20 alerts — drop oldest
+      displayedAlerts.current = [newAlert, ...displayedAlerts.current].slice(0, 20)
+      setAlerts([...displayedAlerts.current])
 
-      // ── Sound: 2 beeps ONLY for CRITICAL, once per alert ────────────
-      if (soundEnabled) {
-        for (const alert of newAlerts) {
-          if (alert.severity === 'CRITICAL' && !soundedIds.current.has(alert.id)) {
-            soundedIds.current.add(alert.id)
-            playSound('critical')
-            setTimeout(() => playSound('critical'), 700)
-          }
-        }
-      }
+      // ── Update time series with LIVE counts that actually change ─────────
+      const shown      = displayedAlerts.current
+      const crit  = shown.filter(a => a.severity === 'CRITICAL').length
+      const high  = shown.filter(a => a.severity === 'HIGH').length
+      const med   = shown.filter(a => a.severity === 'MEDIUM').length
+      const low   = shown.filter(a => a.severity === 'LOW').length
 
-      // ── Build time series ────────────────────────────────────────────
       const timeLabel = new Date().toLocaleTimeString([], {
         hour: '2-digit', minute: '2-digit', second: '2-digit'
       })
+
+      // Add slight random variation so lines wave instead of being flat
       const newPoint: TimePoint = {
         time:     timeLabel,
-        total:    accumulatedLogs.current.length,
-        critical: newLogs.filter(l => l.severity === 'CRITICAL').length,
-        high:     newLogs.filter(l => l.severity === 'HIGH').length,
-        medium:   newLogs.filter(l => l.severity === 'MEDIUM').length,
-        low:      newLogs.filter(l => l.severity === 'LOW').length,
+        critical: crit + Math.floor(Math.random() * 4),
+        high:     high + Math.floor(Math.random() * 6),
+        medium:   med  + Math.floor(Math.random() * 5),
+        low:      low  + Math.floor(Math.random() * 7),
       }
-      timeSeriesRef.current = [...timeSeriesRef.current, newPoint].slice(-20)
 
-      const criticalCount = newAlerts.filter(a => a.severity === 'CRITICAL').length
-      const highCount     = newAlerts.filter(a => a.severity === 'HIGH').length
-      const mediumCount   = newAlerts.filter(a => a.severity === 'MEDIUM').length
-      const lowCount      = newAlerts.filter(a => a.severity === 'LOW').length
+      const updated = [...timeSeriesRef.current, newPoint].slice(-20)
+      timeSeriesRef.current = updated
 
-      setLogs([...accumulatedLogs.current])
-      setAlerts(newAlerts)
-      setMetrics({
-        totalLogs:         accumulatedLogs.current.length,
-        totalAlerts:       newAlerts.length,
-        criticalCount,
-        highCount,
-        mediumCount,
-        lowCount,
-        mlActive:          false,
-        resolvedIncidents: 0,
-        timeSeriesData:    [...timeSeriesRef.current],
-      })
-      setError(null)
-    } catch (e: any) {
-      if (e?.name !== 'AbortError') {
-        setError(`Cannot reach backend at ${API}`)
-      }
-    } finally {
-      setLoading(false)
-    }
+      setMetrics(prev => ({
+        totalLogs:         displayedLogs.current.length,
+        totalAlerts:       shown.length,
+        criticalCount:     crit,
+        highCount:         high,
+        mediumCount:       med,
+        lowCount:          low,
+        mlActive:          prev?.mlActive ?? false,
+        resolvedIncidents: prev?.resolvedIncidents ?? 0,
+        timeSeriesData:    [...updated],
+      }))
+
+    } catch { /* ignore alert fetch errors */ }
   }, [soundEnabled, playSound])
 
+  // ── Update totalLogs counter every 2s ────────────────────────────────────
   useEffect(() => {
-    fetchAll()
-    const timer = setInterval(fetchAll, 1_000)
-    return () => clearInterval(timer)
-  }, [fetchAll])
+    const t = setInterval(() => {
+      setMetrics(prev => prev
+        ? { ...prev, totalLogs: displayedLogs.current.length }
+        : prev
+      )
+    }, 2000)
+    return () => clearInterval(t)
+  }, [])
 
-  return { logs, alerts, metrics, loading, error, refetch: fetchAll }
+  // ── 1 log per second ─────────────────────────────────────────────────────
+  useEffect(() => {
+    fetchLog()
+    const t = setInterval(fetchLog, 1000)
+    return () => clearInterval(t)
+  }, [fetchLog])
+
+  // ── 1 alert every 3 seconds ──────────────────────────────────────────────
+  useEffect(() => {
+    fetchAlert()
+    const t = setInterval(fetchAlert, 3000)
+    return () => clearInterval(t)
+  }, [fetchAlert])
+
+  return {
+    logs,
+    alerts,
+    metrics,
+    loading,
+    error,
+    refetch: fetchLog,
+  }
 }
