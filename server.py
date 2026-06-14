@@ -220,8 +220,7 @@ threading.Thread(target=background_log_generator, daemon=True).start()
 # API ROUTES
 # ─────────────────────────────────────────────────────────────────────────────
 
-@app.get("/health")
-@app.head("/health")
+@app.get("/")
 def root():
     return {
         "status":  "SOC Log Analyzer API v2.0",
@@ -231,7 +230,7 @@ def root():
     }
 @app.get("/health")
 def health():
-    return {"status": "healthy"}
+    return {"status": "ok"}
 
 @app.get("/api/logs")
 def get_logs():
