@@ -122,7 +122,7 @@ export default function Dashboard({ logs, alerts, metrics, loading }: Props) {
         {/* Log Activity */}
         <div className="lg:col-span-2 bg-gray-900 border border-gray-800 rounded-xl p-4">
           <h2 className="text-sm font-semibold text-gray-300 mb-3">Log Activity Over Time</h2>
-          {loading && timeData.length >= 1 ? (
+          {loading && timeData.length === 0 ? (
             <div className="h-44 flex items-center justify-center text-gray-600 text-sm animate-pulse">
               Fetching data…
             </div>
