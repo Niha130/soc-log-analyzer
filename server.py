@@ -205,7 +205,6 @@ def get_logs():
     logs.sort(key=lambda x: x["timestamp"], reverse=True)
     return {"logs": logs, "total": len(logs), "ml_enabled": ML_AVAILABLE}
 
-
 @app.get("/api/alerts")
 def get_alerts():
     logs   = [generate_log(i) for i in range(50)]
