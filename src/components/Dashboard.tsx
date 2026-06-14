@@ -122,7 +122,7 @@ export default function Dashboard({ logs, alerts, metrics, loading }: Props) {
         {/* Log Activity */}
         <div className="lg:col-span-2 bg-gray-900 border border-gray-800 rounded-xl p-4">
           <h2 className="text-sm font-semibold text-gray-300 mb-3">Log Activity Over Time</h2>
-          {loading && timeData.length === 0 ? (
+          {loading && timeData.length >= 1 ? (
             <div className="h-44 flex items-center justify-center text-gray-600 text-sm animate-pulse">
               Fetching data…
             </div>
@@ -150,10 +150,10 @@ export default function Dashboard({ logs, alerts, metrics, loading }: Props) {
                 <XAxis dataKey="time" tick={{ fill: '#6b7280', fontSize: 10 }} interval="preserveStartEnd" />
                 <YAxis tick={{ fill: '#6b7280', fontSize: 10 }} />
                 <Tooltip contentStyle={{ background: '#111827', border: '1px solid #374151', borderRadius: 8, fontSize: 12 }} />
-                <Area type="monotone" dataKey="critical" stroke="#ef4444" fill="url(#critGrad)"  strokeWidth={2} name="Critical" />
-<Area type="monotone" dataKey="high"     stroke="#f97316" fill="url(#highGrad)"  strokeWidth={2} name="High" />
-<Area type="monotone" dataKey="medium"   stroke="#a855f7" fill="url(#medGrad)"   strokeWidth={2} name="Medium" />
-<Area type="monotone" dataKey="low"      stroke="#22d3ee" fill="url(#lowGrad)"   strokeWidth={2} name="Low" />
+                <Area type="monotone" dataKey="critical" stroke="#ef4444" fill="none" strokeWidth={2} name="Critical" dot={false} />
+                <Area type="monotone" dataKey="high"     stroke="#f97316" fill="none" strokeWidth={2} name="High"     dot={false} />
+                <Area type="monotone" dataKey="medium"   stroke="#eab308" fill="none" strokeWidth={2} name="Medium"   dot={false} />
+                <Area type="monotone" dataKey="low"      stroke="#22c55e" fill="none" strokeWidth={2} name="Low"      dot={false} />
               </AreaChart>
             </ResponsiveContainer>
           ) : catData.length > 0 ? (
